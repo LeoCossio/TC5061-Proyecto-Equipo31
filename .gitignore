@@ -206,3 +206,13 @@ mlflow.db
 # Variables de entorno adicionales
 .env.*
 !.env.example
+
+# MLflow
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Modelos serializados
+*.pkl
+*.pickle
+*.joblib

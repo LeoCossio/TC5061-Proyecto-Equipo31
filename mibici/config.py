@@ -30,3 +30,12 @@ try:
     logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
 except ModuleNotFoundError:
     pass
+
+
+# Configuración del experimento P3
+P3_FECHA_INICIO = "2025-10-01"
+P3_FECHA_FIN = "2026-09-30"
+P3_SEMILLA = 42
+P3_MIN_SALIDAS = 100
+
+MLFLOW_EXPERIMENT = "mibici-equipo31"
