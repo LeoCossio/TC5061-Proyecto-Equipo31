@@ -5,6 +5,7 @@ matplotlib
 notebook
 numpy
 pandas
+pyarrow==26.0.0
 pip
 pytest
 python-dotenv
