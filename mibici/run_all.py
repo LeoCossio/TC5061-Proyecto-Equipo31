@@ -30,7 +30,7 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 # TODO EQUIPO: sustituir módulos si tus compañeros usan otros nombres.
 # Habilitar P1 y P2 SOLO después de probarlos por separado.
 EXPERIMENTS = [
-    ("P1 - Regresión", "mibici.train_p1", False),  # TODO: activar
+    ("P1 - Regresión", "mibici.train_p1", True),
     ("P2 - Clasificación", "mibici.train_p2", False),  # TODO: activar
     ("P3 - Clustering", "mibici.train_p3", True),
 ]
