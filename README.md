@@ -8,13 +8,13 @@
 
 Este proyecto utiliza los datos abiertos del sistema de bicicletas públicas **MiBici** para estudiar la demanda de viajes, explorar posibles desequilibrios operativos y segmentar estaciones de acuerdo con sus patrones históricos de uso. El objetivo académico es construir un flujo **reproducible y trazable** de ingesta, preparación de datos, entrenamiento, evaluación y registro de experimentos con MLflow.
 
-> **Estado:** proyecto en desarrollo. La implementación de P3 (clustering) ya funciona; P1, P2 y algunos elementos de integración se encuentran pendientes de validación por el equipo.
+> **Estado:** proyecto en desarrollo. P3 (clustering) y P1 (regresión) ya funcionan; P2 y algunos elementos de integración se encuentran pendientes de validación por el equipo.
 
 ## 1. Preguntas de análisis
 
 | Pregunta | Tipo de problema | Unidad de análisis | Objetivo | Modelo de referencia y candidato |
 |---|---|---|---|---|
-| **P1 — Demanda** | Regresión | Estación-hora | Estimar el número de viajes que iniciarán en la siguiente hora. | Media histórica / RandomForestRegressor (propuestos). |
+| **P1 — Demanda** | Regresión | Estación-hora | Estimar el número de viajes que iniciarán en la siguiente hora. | Media histórica / RandomForestRegressor (implementados). |
 | **P2 — Riesgo de desbalance** | Clasificación | Estación-hora | Estimar un **indicador proxy** de riesgo operativo en la siguiente hora a partir de flujos de viajes. | Frecuencia histórica / RandomForestClassifier (propuestos). |
 | **P3 — Perfiles de estaciones** | Clustering | Estación | Agrupar estaciones según demanda, balance y distribución temporal de salidas. Sin horizonte predictivo. | Terciles de demanda / K-Means (implementados). |
 
@@ -47,7 +47,9 @@ Para más detalles, consultar [`references/definicion_datos.md`](references/defi
 │   ├── dataset.py                # Descarga, limpieza y creación de Parquet
 │   ├── features.py               # Acceso a funciones de ingeniería de características
 │   ├── feature_engineering/
-│   │   └── clustering.py         # Características, baseline y K-Means de P3
+│   │   ├── clustering.py         # Características, baseline y K-Means de P3
+│   │   └── regresion.py          # Panel estación-hora, características, baseline y RandomForest de P1
+│   ├── train_p1.py               # Entrenamiento y registro de P1 en MLflow
 │   ├── train_p3.py               # Entrenamiento y registro de P3 en MLflow
 │   └── run_all.py                # Coordinador provisional de P1, P2 y P3
 ├── notebooks/                    # Exploración y análisis
@@ -109,15 +111,28 @@ El script registra dos runs en el experimento MLflow `mibici-equipo31`:
 
 Se registran parámetros, métricas, etiquetas (`equipo`, `pregunta`, `git_commit`) y gráficas. El backend utilizado es una base de datos SQLite local, `mlflow.db`.
 
-### 5.3 Ejecutar los modelos habilitados
+### 5.3 Ejecutar P1 (baseline y RandomForest)
+
+```powershell
+python -m mibici.train_p1
+```
+
+El script registra dos runs en el experimento MLflow `mibici-equipo31`:
+
+- `P1-baseline-media-historica`: media histórica de la estación para el mismo día de la semana y hora, calculada solo con semanas anteriores.
+- `P1-random-forest`: `RandomForestRegressor` con hora, día de la semana, rezagos de 1, 2, 3, 24 y 168 horas, promedios móviles y promedios históricos de la estación.
+
+La partición es cronológica: entrenamiento hasta mayo de 2026, validación en junio–julio y prueba en agosto–septiembre. Se registran `val_` y `test_` de `mae`, `rmse` y `mae_horas_pico`, además de gráficas de perfil horario e importancia de variables.
+
+### 5.4 Ejecutar los modelos habilitados
 
 ```powershell
 python -m mibici.run_all
 ```
 
-**Estado actual:** el coordinador comprueba los 12 Parquet y ejecuta **solo P3**. P1 y P2 permanecen deshabilitados hasta integrar y probar sus respectivos scripts. Este comando **no realiza la descarga automáticamente**; ejecutar primero la ingesta si faltan los datos.
+**Estado actual:** el coordinador comprueba los 12 Parquet y ejecuta **P1 y P3**. P2 permanece deshabilitado hasta integrar y probar su script. Este comando **no realiza la descarga automáticamente**; ejecutar primero la ingesta si faltan los datos.
 
-### 5.4 Consultar experimentos en MLflow
+### 5.5 Consultar experimentos en MLflow
 
 ```powershell
 mlflow ui --backend-store-uri "sqlite:///mlflow.db"

@@ -1,97 +1,148 @@
 # Definición de datos — Proyecto MiBici (Equipo 31)
 
-**Estado:** Borrador para validación del equipo  
-**Periodo de estudio:** 1 de octubre de 2025 al 30 de septiembre de 2026
+**Versión:** documentación de la solución para la primera entrega  
+**Periodo de análisis:** 1 de octubre de 2025 al 30 de septiembre de 2026  
+**Alcance:** datos compartidos para P1 (regresión), P2 (clasificación) y P3 (clustering).
 
 ## 1. Periodo seleccionado y justificación
 
-Se utilizarán **12 meses consecutivos**, de octubre de 2025 a septiembre de 2026. Este intervalo cubre un ciclo anual completo y permite explorar variaciones por hora, día de la semana y mes, así como posibles efectos estacionales. Es un periodo reciente y evita combinar registros de años muy distantes, en los que podrían cambiar las estaciones o el formato de publicación.
+Se seleccionaron **12 meses consecutivos**, de octubre de 2025 a septiembre de 2026. Un ciclo anual permite examinar diferencias por hora, día de la semana y mes, así como describir variaciones estacionales dentro del periodo. La selección evita combinar registros de épocas demasiado distantes en las que pudieran variar la operación de estaciones o los formatos de publicación.
 
-**Limitación:** contar con un único ciclo anual permite analizar variaciones dentro del año, pero no confirma que los patrones estacionales se repitan de un año a otro. La actividad de cada estación y su capacidad pueden cambiar durante el periodo.
+El periodo constituye una **ventana histórica de observación**, no evidencia de que los patrones estacionales se repitan entre años. La disponibilidad, capacidad y fecha de incorporación de cada estación pueden cambiar durante estos doce meses.
 
-## 2. Fuentes y tamaño real
+## 2. Fuentes y tamaño real del conjunto
 
-**Fuente oficial:** [Portal de datos abiertos de MiBici](https://www.mibici.net/es/datos-abiertos/).
+**Fuente primaria:** [Portal de datos abiertos de MiBici](https://www.mibici.net/es/datos-abiertos/).
 
-- **Viajes:** 12 archivos mensuales, `datos_abiertos_AAAA_MM.csv`, para octubre–diciembre de 2025 y enero–septiembre de 2026. Los enlaces directos se descubren automáticamente desde el portal en `mibici/dataset.py`; debe conservarse un listado de URLs efectivamente descargadas para la entrega.
-- **Estaciones:** [nomenclatura de septiembre de 2026](https://www.mibici.net/site/assets/files/1118/nomenclatura_2026_09.csv), con identificadores y atributos de estaciones.
+Se utilizaron los siguientes archivos oficiales:
 
-**Resultados reportados por la ejecución de ingesta del equipo (pendientes de verificación independiente):**
+- **Historial de viajes:** 12 CSV mensuales denominados `datos_abiertos_AAAA_MM.csv`, desde `datos_abiertos_2025_10.csv` hasta `datos_abiertos_2026_09.csv`. El módulo `mibici/dataset.py` descubre automáticamente los enlaces de descarga vigentes desde el portal, verifica que estén disponibles los doce meses y descarga los archivos correspondientes.
+- **Catálogo de estaciones:** [nomenclatura de septiembre de 2026](https://www.mibici.net/site/assets/files/1118/nomenclatura_2026_09.csv), descargada en `data/external/`.
+
+### 2.1 Resultados de la ingesta
 
 | Indicador | Valor |
 |---|---:|
-| Meses | 12 |
-| Registros originales | 4,497,877 |
-| Registros procesados | 4,497,119 |
-| Filas duplicadas eliminadas | 758 |
-| Estaciones distintas presentes en viajes originales | 471 |
+| Archivos mensuales | 12 |
+| Registros de viaje originales | 4,497,877 |
+| Registros de viaje procesados | 4,497,119 |
+| Duplicados eliminados | 758 |
+| Estaciones identificadas en los viajes | 471 |
 | Estaciones en el catálogo de septiembre de 2026 | 484 |
-| Archivos Parquet mensuales generados | 12 |
+| Archivos Parquet procesados | 12 |
+| Estaciones incluidas en P3 después del filtro de actividad | 470 |
 
-Las estaciones distintas en viajes y las estaciones del catálogo son universos diferentes: algunas estaciones catalogadas pueden carecer de viajes durante el periodo y otras pueden no figurar en el catálogo de septiembre. Se reportaron las estaciones 405 y 407 como ausentes de dicha nomenclatura, aunque presentes en registros de viajes.
+Estas cifras corresponden a los resultados reportados durante la ingesta y exploración del equipo. El conjunto de estaciones registradas en viajes no coincide necesariamente con el catálogo de septiembre: puede incluir estaciones retiradas o ausentes de esa versión y estaciones catalogadas sin actividad en el periodo. Entre los identificadores presentes en viajes pero ausentes en la nomenclatura consultada se señalaron **405 y 407**.
 
-## 3. Variables originales y construcción de objetivos
+### 2.2 Preparación de los archivos
 
-### 3.1 Variables originales
+La ingesta implementada en `mibici/dataset.py` realiza las siguientes operaciones:
 
-Los CSV originales contienen `Viaje_Id`, `Usuario_Id`, `Genero`, `Año_de_nacimiento`, `Inicio_del_viaje`, `Fin_del_viaje`, `Origen_Id` y `Destino_Id` (los nombres pueden variar por archivo). El proceso implementado normaliza y conserva en Parquet las cinco variables operativas siguientes:
+1. Descubre y descarga los CSV oficiales del periodo y el catálogo de estaciones.
+2. Lee los CSV en UTF-8 o, cuando es necesario, con codificación CP1252.
+3. Normaliza nombres de columnas, identificadores numéricos y campos de fecha.
+4. Elimina duplicados exactos y registros inválidos (campos operativos obligatorios ausentes o fin anterior al inicio).
+5. Conserva únicamente las columnas operativas y genera Parquet mensuales comprimidos con Snappy mediante PyArrow en `data/processed/`.
 
-| Campo procesado | Descripción y uso |
-|---|---|
-| `viaje_id` | Identificador del viaje; control de calidad |
-| `inicio` | Fecha y hora de inicio; agregaciones de demanda |
-| `fin` | Fecha y hora de terminación; agregaciones de llegadas |
-| `origen_id` | Estación de salida |
-| `destino_id` | Estación de llegada |
+El proceso se invoca desde la raíz del proyecto mediante:
 
-El catálogo agrega `id`, ubicación y capacidad según su estructura real; los nombres exactos de columnas se confirmarán al leer ese archivo. La capacidad del catálogo de septiembre de 2026 **no debe suponerse válida para todos los meses anteriores**.
+```powershell
+python -m mibici.dataset
+```
 
-### 3.2 Variables objetivo / resultados
+Los datos crudos se mantienen en `data/raw/`, la nomenclatura en `data/external/` y los archivos derivados en `data/processed/`. Estas carpetas de datos se excluyen del control de versiones de Git.
 
-**P1 — Regresión (estación-hora):** número de viajes cuya fecha de **inicio** cae en la siguiente hora para una estación. Se obtendrá contando `viaje_id` agrupado por `origen_id` y hora de `inicio`. Se incluirán intervalos con **cero viajes** para estaciones activas, de modo que los periodos sin salidas no desaparezcan del análisis.
+## 3. Variables originales y construcción de resultados
 
-**P2 — Clasificación (estación-hora):** etiqueta binaria de **riesgo estimado de desbalance**, no de disponibilidad real. La propuesta es construirla a partir del balance neto futuro `salidas - llegadas` durante la hora siguiente, normalizado por la capacidad de la estación, y compararlo con un umbral a definir. El indicador deberá identificar por separado riesgo por exceso de salidas y por exceso de llegadas, si es relevante. **Pendiente de acuerdo del equipo:** fórmula exacta, umbral, manejo de estaciones sin capacidad y limitaciones. No puede inferirse el inventario real solo con flujos de viajes.
+### 3.1 Variables de origen y tratamiento
 
-**P3 — Clustering (estación):** no existe etiqueta objetivo supervisada. Se construirá una fila por estación con atributos históricos como promedio diario de viajes, distribución horaria, proporción de viajes en fines de semana y relación entre llegadas y salidas. Los grupos resultantes se interpretarán con ayuda de la ubicación geográfica y, cuando sea apropiado, la capacidad.
+Los CSV incluyen campos operativos y atributos de usuarios; el proceso de limpieza retiene exclusivamente las cinco columnas necesarias para los modelos:
 
-## 4. Condiciones de uso y tratamiento de datos personales
-
-El [portal oficial](https://www.mibici.net/es/datos-abiertos/) publica archivos de uso y alienta a explorarlos y compartirlos. **No se identificó en esa página una licencia específica explícita para los CSV** (por ejemplo, CC BY o CC0); por lo tanto, no se afirmará una licencia de reutilización concreta sin verificación adicional. Se citará la fuente y se revisarán las condiciones aplicables antes de redistribuir datos derivados.
-
-Se consultó también el [aviso de privacidad publicado por MiBici](https://www.mibici.net/es/aviso-de-privacidad/). Para este proyecto:
-
-- No se utilizarán `Usuario_Id`, `Genero` ni `Año_de_nacimiento` para entrenar los modelos.
-- El código de limpieza conserva solamente los cinco campos operativos enumerados arriba en los Parquet procesados.
-- Los CSV originales se mantendrán localmente y excluidos del repositorio con `.gitignore`; pueden contener identificadores pseudónimos y secuencias de trayectos que requieren precaución.
-- Los resultados compartidos serán, de preferencia, estadísticas agregadas por estación o periodo. No se publicarán trayectorias individuales ni identificadores de usuario.
-
-## 5. Partición temporal y prevención de fuga de información
-
-**Propuesta para P1 y P2 (sujeta a aprobación del equipo):**
-
-| Conjunto | Meses | Objetivo |
+| Columna procesada | Procedencia | Uso |
 |---|---|---|
-| Entrenamiento | Oct 2025 – May 2026 (8) | Ajustar modelos y transformaciones |
-| Validación | Jun – Jul 2026 (2) | Elegir hiperparámetros y umbrales |
-| Prueba | Ago – Sep 2026 (2) | Evaluación final sin reajustes |
+| `viaje_id` | `Viaje_Id` | Identificación del registro y controles de calidad |
+| `inicio` | `Inicio_del_viaje` | Fecha/hora de salida y agregaciones temporales |
+| `fin` | `Fin_del_viaje` | Fecha/hora de finalización y análisis de llegadas |
+| `origen_id` | `Origen_Id` | Estación de origen |
+| `destino_id` | `Destino_Id` | Estación de destino |
 
-La separación será cronológica, sin mezclar aleatoriamente viajes de meses futuros con los de entrenamiento. Las variables de demanda histórica, balances y promedios para predecir la hora siguiente se calcularán **solo a partir de eventos disponibles hasta el instante de predicción**. El escalado y otras transformaciones aprendidas se ajustarán únicamente con entrenamiento, y se aplicarán sin volver a ajustarlas a validación y prueba.
+Los archivos originales también pueden incluir `Usuario_Id`, `Genero` y `Año_de_nacimiento`, que **no se conservan en los Parquet procesados ni se utilizan como variables de modelado**.
 
-Para **P2**, los flujos futuros sirven para construir la etiqueta *después* del periodo objetivo, pero jamás como predictores de esa misma hora. Se evitará usar como variable el mismo indicador futuro que define el objetivo.
+El catálogo de estaciones proporciona metadatos complementarios, como localización y, cuando están disponibles, atributos de capacidad. **La capacidad del catálogo de septiembre de 2026 no debe interpretarse automáticamente como capacidad histórica válida para meses anteriores.**
 
-Para **P3**, no se requiere partición supervisada, pero se propone calcular perfiles y agrupaciones con los datos del periodo de entrenamiento y examinar su estabilidad en meses posteriores. Al comparar periodos deberán tratarse por separado las estaciones nuevas o con presencia parcial para evitar interpretaciones equivocadas.
+### 3.2 P1 — Regresión de demanda
 
-## 6. Estado y pendientes de validación
+- **Unidad de análisis:** estación-hora.
+- **Objetivo:** número de viajes iniciados durante la hora que se desea predecir (horizonte operativo: una hora).
+- **Construcción:** agrupar los registros por `origen_id` y hora de `inicio`. Se crea un panel horario que incluye las horas sin salidas, con objetivo igual a cero, desde la primera actividad observada de cada estación; no se generan horas anteriores a esa primera observación.
+- **Variables predictoras implementadas:** hora, día de la semana, indicador de fin de semana, rezagos de 1, 2, 3, 24 y 168 horas, promedios móviles de 24 y 168 horas, media histórica de la estación y media histórica para la misma estación, día de la semana y hora.
 
-- [ ] Adjuntar el listado exacto de enlaces mensuales utilizados por el proceso.
-- [ ] Verificar los conteos y la unicidad directamente sobre los Parquet generados.
-- [ ] Confirmar nombres y cobertura histórica de la nomenclatura de estaciones.
-- [ ] Acordar la fórmula y el umbral de P2.
-- [ ] Aprobar la partición temporal por el equipo.
-- [ ] Implementar y versionar un manifiesto de integridad con hashes SHA-256; registrar su versión en MLflow.
-- [ ] Probar la ingesta desde un clon limpio.
+Estas variables se encuentran implementadas en `mibici/feature_engineering/regresion.py`. Sus rezagos y promedios históricos utilizan observaciones anteriores a la hora objetivo. Se excluyen las primeras 168 horas de cada estación para disponer del historial requerido.
 
-## Referencias de consulta
+### 3.3 P2 — Clasificación de riesgo estimado de desbalance
+
+- **Unidad de análisis:** estación-hora; horizonte de la hora siguiente.
+- **Resultado definido en el ML Canvas:** indicador binario de **riesgo indirecto de desbalance** basado en las salidas y llegadas, no en una medición directa de bicicletas disponibles o espacios libres.
+- **Construcción de la etiqueta prevista:** calcular el balance neto de flujos de la hora objetivo y relacionarlo con la capacidad de la estación cuando exista información válida. Una regla de umbral permitirá etiquetar episodios de riesgo. La fórmula, el umbral numérico y el manejo de capacidades ausentes deben corresponder a la implementación final de P2; **no se fijan valores no documentados**.
+- **Características previstas:** hora y día, salidas y llegadas históricas, rezagos, balances históricos y capacidad verificada cuando sea pertinente.
+
+La etiqueta puede calcularse utilizando los viajes observados durante la hora futura para fines de entrenamiento y evaluación. Esos mismos valores futuros **no deben incorporarse como predictores**, pues causarían fuga de información. Los CSV no permiten reconstruir directamente el inventario real de bicicletas o anclajes libres.
+
+### 3.4 P3 — Clustering de estaciones
+
+- **Unidad de análisis:** una estación, caracterizada por su comportamiento histórico durante los doce meses de estudio.
+- **Objetivo:** agrupación no supervisada; no existe etiqueta verdadera ni horizonte predictivo.
+- **Características construidas:** demanda promedio diaria (`viajes_diarios`), balance relativo entre llegadas y salidas, proporción de salidas en fin de semana y proporción de salidas en franjas de mañana, mediodía, tarde y noche.
+- **Preprocesamiento:** se excluyen estaciones con menos de 100 salidas durante el periodo; para modelar se descarta la proporción nocturna por redundancia con las otras franjas, se aplica `log1p` a la demanda y se estandarizan las seis variables restantes con `StandardScaler`.
+- **Métodos utilizados:** baseline por terciles de demanda y `KMeans` de tres grupos.
+
+La implementación se encuentra en `mibici/feature_engineering/clustering.py` y se ejecuta con `mibici/train_p3.py`. Se incluyeron **470 estaciones**. El promedio de viajes diarios emplea los días observados en el conjunto global; para estaciones con cobertura parcial, esa cifra puede subestimar la intensidad durante sus días efectivamente activos. Por tanto, los resultados deben interpretarse considerando los posibles cambios de cobertura.
+
+## 4. Condiciones de uso y privacidad
+
+La información procede del [portal de datos abiertos de MiBici](https://www.mibici.net/es/datos-abiertos/). En la documentación de trabajo no se identificó una licencia específica explícita para los CSV (por ejemplo, CC BY o CC0); por ello, se cita la fuente original y no se atribuye una licencia de redistribución no verificada. También se considera el [aviso de privacidad de MiBici](https://www.mibici.net/es/aviso-de-privacidad/).
+
+Las medidas aplicadas son:
+
+- Excluir de los datos procesados `Usuario_Id`, `Genero` y `Año_de_nacimiento`.
+- Mantener los CSV originales y los Parquet localmente, fuera del repositorio público.
+- Compartir resultados agregados por estación o periodo y no divulgar secuencias de trayectos individuales ni identificadores de usuario.
+- No registrar en MLflow credenciales ni información personal como parámetros, etiquetas o artefactos.
+
+## 5. Estrategia temporal y prevención de fuga de información
+
+### 5.1 P1 — Partición implementada
+
+P1 utiliza una separación cronológica implementada mediante `dividir_temporal_p1()` y fechas centralizadas en `mibici/config.py`:
+
+| Conjunto | Periodo | Función |
+|---|---|---|
+| Entrenamiento | Octubre de 2025 a mayo de 2026 | Ajustar el modelo |
+| Validación | Junio a julio de 2026 | Comparar alternativas y evaluar decisiones de modelado |
+| Prueba | Agosto a septiembre de 2026 | Evaluar sobre observaciones posteriores |
+
+La construcción de rezagos, promedios móviles y estadísticas históricas de P1 excluye la hora objetivo y las horas posteriores. Los hiperparámetros y la semilla del experimento se centralizan en `config.py`. El baseline utiliza medias históricas causales, con alternativas de respaldo para observaciones sin suficiente historia.
+
+### 5.2 P2 — Estrategia definida
+
+La solución de P2 sigue el mismo criterio de **partición cronológica** (entrenamiento: octubre de 2025 a mayo de 2026; validación: junio y julio; prueba: agosto y septiembre). Las variables predictoras se calculan solo con hechos anteriores a la hora objetivo. Los valores de la siguiente hora se reservan para construir la etiqueta de riesgo, no para alimentar el modelo. La separación debe verificarse contra `train_p2.py` cuando se incorpore su implementación al repositorio.
+
+### 5.3 P3 — Evaluación de agrupaciones históricas
+
+P3 construye perfiles de estaciones con **el periodo completo de octubre de 2025 a septiembre de 2026** y evalúa la separación de los grupos sobre las mismas características agregadas. Esta metodología describe patrones históricos; **no equivale a una validación de generalización temporal**. Como extensión metodológica se contempla formar clusters con un periodo anterior y analizar su estabilidad en meses posteriores, especialmente para estaciones nuevas o con actividad parcial.
+
+## 6. Versionado y trazabilidad de datos
+
+El entrenamiento de P1 y P3 incorpora una **huella SHA-256 combinada** sobre los doce Parquet utilizados, junto con los nombres de archivo; la registra en MLflow como `data_version`. También conserva el intervalo temporal y el commit de Git en los registros correspondientes. Esta huella permite distinguir conjuntos de archivos efectivamente usados en distintos runs.
+
+Para satisfacer el requisito de **versionado verificable desde Git**, la arquitectura contempla asimismo un manifiesto por archivo con nombre, cantidad de registros y SHA-256. **El manifiesto independiente no se encuentra demostrado en el código revisado**, por lo que no debe confundirse con el hash combinado registrado por los scripts de entrenamiento.
+
+## 7. Síntesis
+
+El conjunto de datos se preparó con una ingesta compartida y doce archivos Parquet de estructura uniforme. P1 utiliza un panel cronológico estación-hora para predicción de demanda; P2 adopta un indicador proxy de riesgo de desbalance diseñado sobre flujos; y P3 analiza perfiles históricos agregados por estación. La separación entre datos crudos, procesados, modelos y artefactos, junto con las etiquetas de MLflow y el historial de Git, aporta trazabilidad al proyecto.
+
+## Referencias
 
 - MiBici. (s. f.). *Datos abiertos*. https://www.mibici.net/es/datos-abiertos/
 - MiBici. (s. f.). *Aviso de privacidad*. https://www.mibici.net/es/aviso-de-privacidad/
+- Documentación técnica del proyecto: `mibici/dataset.py`, `mibici/feature_engineering/regresion.py`, `mibici/feature_engineering/clustering.py`, `mibici/train_p1.py`, `mibici/train_p3.py` y `mibici/config.py`.

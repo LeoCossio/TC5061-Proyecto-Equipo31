@@ -1,82 +1,170 @@
-# Propuesta de modelos y métricas — MiBici (Equipo 31)
+# Modelos y métricas — Proyecto MiBici (Equipo 31)
 
-**Estado:** Propuesta, pendiente de validación con el equipo y resultados experimentales.  
-**Periodo de datos:** Octubre de 2025 a septiembre de 2026.  
-**Documentos relacionados:** `references/definicion_datos.md` y `references/pipelines_ml.md`.
+**Periodo de análisis:** octubre de 2025 a septiembre de 2026  
+**Objetivo:** comparar métodos de referencia (*baselines*) con modelos candidatos para tres preguntas operativas, utilizando métricas acordes con cada tarea y experimentos trazables en MLflow.  
+**Estado de verificación:** P1 y P3 cuentan con implementación en el repositorio revisado; los resultados numéricos de P3 se comprobaron en MLflow. P2 se especifica conforme al ML Canvas, sin atribuirle resultados ni ejecuciones no verificados.
 
-## 1. Objetivo
+## 1. Resumen de modelos
 
-Definir, para cada pregunta de negocio, un método de referencia (*baseline*), al menos un modelo candidato y criterios de evaluación adecuados. El propósito de esta entrega es establecer comparaciones reproducibles; **no se reportan resultados ni umbrales de mejora inventados**. Los valores se obtendrán en los experimentos y se registrarán en MLflow.
-
-| Pregunta | Unidad / horizonte | Baseline | Modelo candidato | Métrica principal |
+| Pregunta | Unidad de análisis / horizonte | Baseline | Modelo candidato | Métricas |
 |---|---|---|---|---|
-| P1: demanda | Estación-hora; próxima hora | Media histórica por estación, hora y día de la semana | `RandomForestRegressor` | MAE |
-| P2: desbalance estimado | Estación-hora; próxima hora | Frecuencia histórica de la clase de riesgo por estación y franja horaria | `RandomForestClassifier` | Recall de la clase de riesgo, acompañado de precision |
-| P3: perfiles de estaciones | Estación; sin horizonte predictivo | Grupos de demanda baja/media/alta | `KMeans` | Silhouette Score e interpretabilidad |
+| **P1 — Regresión de demanda** | Estación-hora; demanda de la hora objetivo siguiente | Media histórica por estación, día de semana y hora | `RandomForestRegressor` | MAE, RMSE y MAE en horas pico |
+| **P2 — Clasificación de riesgo de desbalance** | Estación-hora; próxima hora | Frecuencia histórica de riesgo por estación y franja horaria | `RandomForestClassifier` | Recall, precision y F1-score de la clase riesgo |
+| **P3 — Clustering de estaciones** | Estación; perfiles históricos, sin horizonte predictivo | Terciles de demanda diaria | `KMeans` (`k=3`) | Silhouette Score, tamaños de grupos e interpretación |
+
+Los tres enfoques son complementarios: P1 apoya la anticipación de demanda, P2 el análisis preventivo de riesgo operativo y P3 la caracterización de patrones de uso de las estaciones.
 
 ## 2. P1 — Regresión de demanda
 
-**Objetivo:** Predecir cuántos viajes se iniciarán en una estación durante la hora siguiente.
+### 2.1 Problema y variables
 
-- **Variable objetivo:** número entero de salidas de la estación en la hora futura, incluyendo las horas sin viajes (cero).
-- **Baseline:** promedio histórico de salidas de la misma estación para la misma hora y día de la semana, calculado solo con observaciones anteriores. Si no hay suficiente historial, utilizar una media histórica más general definida de antemano (por estación o global).
-- **Modelo candidato:** `RandomForestRegressor`, utilizando hora, día de semana, estación, conteos rezagados y promedios históricos causales. La codificación de estación y cualquier transformación ajustable se aprende solo en entrenamiento.
-- **Métrica principal — MAE:** error absoluto medio expresado en **viajes por estación-hora**. Es fácil de interpretar para estimar el error de planificación: menor MAE indica mejor precisión promedio.
-- **Métrica complementaria — RMSE:** penaliza más los errores grandes; es útil porque subestimar de manera considerable las horas de mayor demanda puede afectar la distribución de bicicletas.
-- **Decisión operativa asociada:** planificar disponibilidad y redistribución con base en las horas y estaciones con mayor demanda estimada.
-- **Criterio de comparación:** el candidato debe obtener un `val_mae` inferior al baseline para considerarse una mejora inicial; reportar `test_mae` y `test_rmse` una sola vez después de seleccionar el diseño en validación. Analizar también el error en horas pico.
+Se estima el número de viajes que se iniciarán en una estación durante una hora objetivo. El código construye un **panel estación-hora**, con periodos sin viajes representados mediante ceros a partir de la primera salida observada de cada estación.
 
-**Precaución:** los promedios y rezagos no pueden incorporar observaciones de la hora que se intenta predecir ni horas posteriores. La demanda observada de la hora objetivo se usa solo como etiqueta.
+Las características implementadas en `mibici/feature_engineering/regresion.py` incluyen:
+
+- Calendario: hora del día, día de la semana e indicador de fin de semana.
+- Demanda rezagada: 1, 2, 3, 24 y 168 horas.
+- Promedios móviles de las 24 y 168 horas anteriores.
+- Promedio histórico de cada estación y promedio histórico para la combinación estación–día de semana–hora.
+
+Las características históricas se construyen a partir de observaciones **anteriores a la hora objetivo**; se descartan las primeras 168 horas de cada estación para disponer de historial suficiente para los rezagos.
+
+### 2.2 Baseline y candidato
+
+**Baseline — Media histórica.** Predice el promedio previo de la estación en el mismo día de la semana y hora. Si falta ese historial, utiliza la media histórica general de la estación y, como último recurso, la media global de entrenamiento.
+
+**Candidato — Random Forest Regressor.** Entrena un ensamble de árboles con las doce características descritas. La configuración fijada en `mibici/config.py` es:
+
+| Hiperparámetro | Valor |
+|---|---:|
+| `n_estimators` | 100 |
+| `min_samples_leaf` | 20 |
+| `max_samples` | 0.3 |
+| Semilla (`random_state`) | 42 |
+
+El script ejecutable `mibici/train_p1.py` produce las predicciones, calcula las métricas y registra el baseline y el candidato en MLflow.
+
+### 2.3 Evaluación y justificación
+
+La separación de P1 es cronológica:
+
+| Conjunto | Periodo | Uso |
+|---|---|---|
+| Entrenamiento | Octubre de 2025 – mayo de 2026 | Entrenamiento y medias de referencia |
+| Validación | Junio – julio de 2026 | Comparación y selección |
+| Prueba | Agosto – septiembre de 2026 | Evaluación sobre el periodo más reciente |
+
+- **MAE:** error absoluto promedio en viajes por estación-hora; ofrece una medida directamente interpretable para operación.
+- **RMSE:** penaliza más los errores grandes y permite detectar dificultades ante picos de demanda.
+- **MAE en horas pico:** evalúa específicamente las horas 07:00–09:00 y 17:00–20:00 entre semana, cuando los errores pueden tener mayor impacto operativo.
+
+El script registra las tres métricas en validación y prueba, con nombres como `val_mae`, `test_rmse` y `test_mae_horas_pico`, y guarda figuras de demanda real frente a predicha e importancia de variables.
+
+**Resultados numéricos:** el código y la generación de artefactos constan en el repositorio, pero las cifras definitivas de MAE/RMSE deben transcribirse de una ejecución verificada de MLflow. No se asignan valores supuestos.
 
 ## 3. P2 — Clasificación de riesgo *proxy* de desbalance
 
-**Objetivo:** Identificar estaciones que podrían experimentar un desequilibrio operativo durante la hora siguiente. **No se predice inventario real**, porque MiBici no lo publica en estos CSV.
+### 3.1 Problema y construcción de la etiqueta
 
-- **Variable objetivo (pendiente de aprobación):** etiqueta binaria de *riesgo estimado* construida a partir del **balance neto futuro** de llegadas y salidas, relativo a la capacidad de la estación, mediante una fórmula y un umbral definidos previamente. Se documentarán ambos y el manejo de capacidades ausentes o no históricas.
-- **Baseline:** probabilidad histórica de riesgo para una estación y franja horaria, calculada únicamente con etiquetas de periodos anteriores. Clasificar como riesgo si la probabilidad supera un umbral **elegido en validación**. En casos de poco historial, utilizar una frecuencia histórica general.
-- **Modelo candidato:** `RandomForestClassifier`, con entradas y salidas rezagadas, balances históricos, capacidad cuando sea válida y variables temporales.
-- **Métrica principal — Recall (clase riesgo):** proporción de episodios etiquetados como riesgo que el modelo detecta. Es pertinente porque pasar por alto un episodio podría retrasar una intervención.
-- **Métricas complementarias — Precision y F1:** precision indica qué proporción de alertas corresponde a la etiqueta proxy y ayuda a limitar falsas alarmas; F1 resume el equilibrio entre precision y recall. Reportar además matriz de confusión y proporción de clase positiva.
-- **Decisión operativa asociada:** priorizar estaciones para revisar y, eventualmente, rebalancear; la cantidad de alertas accionables depende de recursos disponibles que aún no conocemos.
-- **Criterio de comparación:** no elegir un modelo solo porque alcance recall alto alertando siempre. Comparar baseline y candidato con **recall junto con precision**, y seleccionar umbral en validación antes de informar resultados de prueba.
+Se plantea una clasificación binaria del **riesgo indirecto de desbalance** por estación y hora, con horizonte de una hora. Los archivos públicos de viajes no incluyen inventarios históricos de bicicletas ni de espacios libres; por tanto, el objetivo **no equivale a predecir directamente estaciones vacías o llenas**.
 
-**Precaución crítica:** la etiqueta se calcula con observaciones de la **hora futura**, pero ninguna variable predictora puede usar ese balance futuro. Además, el baseline no debe repetir la regla de creación de etiquetas usando los mismos valores futuros: sería una evaluación circular. Las métricas miden detección del *proxy*, **no episodios reales comprobados de estaciones vacías o llenas**.
+La etiqueta se define conceptualmente a partir del desbalance neto futuro entre salidas y llegadas, normalizado por capacidad cuando esta sea válida. La implementación deberá establecer de manera explícita la fórmula y el umbral de riesgo, y documentar el tratamiento de capacidades faltantes o no históricas. Si se analizan por separado exceso de salidas y exceso de llegadas, deberán aclararse las etiquetas correspondientes.
+
+### 3.2 Baseline y candidato establecidos en el ML Canvas
+
+**Baseline — Frecuencia histórica.** Estima la probabilidad de riesgo para cada estación y franja horaria a partir de periodos anteriores. Se utiliza una frecuencia más general cuando el historial de una estación es insuficiente.
+
+**Candidato — Random Forest Classifier.** Utiliza información disponible hasta el momento de predicción: hora, día, salidas y llegadas históricas, rezagos, balances previos y capacidad únicamente cuando sea aplicable.
+
+### 3.3 Métricas y criterio de selección
+
+- **Recall de la clase riesgo:** proporción de episodios etiquetados como riesgo que son detectados. Importa porque omitir alertas puede retrasar una revisión operativa.
+- **Precision:** proporción de alertas emitidas que corresponden al indicador de riesgo; permite controlar falsas alertas.
+- **F1-score:** resume el equilibrio entre recall y precision. Se recomienda complementar con matriz de confusión y prevalencia de la clase positiva.
+
+No se debe seleccionar un modelo únicamente por recall si clasifica indiscriminadamente todas las horas como riesgosas. La selección requiere analizar recall y precision conjuntamente, con umbral definido mediante validación cronológica.
+
+La división temporal de referencia acordada para los modelos predictivos es octubre 2025–mayo 2026 (entrenamiento), junio–julio 2026 (validación) y agosto–septiembre 2026 (prueba). **Esta sección describe la solución definida para P2; la implementación exacta, el umbral y los resultados todavía deben contrastarse con su script definitivo.** Los flujos de la hora objetivo pueden formar la etiqueta, pero nunca alimentar las características predictivas de esa misma hora.
 
 ## 4. P3 — Clustering de estaciones
 
-**Objetivo:** Agrupar estaciones con patrones históricos similares de uso para apoyar la interpretación de demanda y la planeación de infraestructura.
+### 4.1 Problema y características
 
-- **Unidad de análisis:** una estación representada por características agregadas de un periodo histórico; no existe horizonte predictivo.
-- **Features propuestas:** salidas promedio por día activo, perfil horario de salidas, porcentaje de viajes en fines de semana, proporción de actividad en horas pico y balance relativo entre llegadas y salidas. Evaluar redundancia entre variables, ausencia de estaciones y meses de actividad. Escalar con `StandardScaler` ajustado sobre los datos de desarrollo.
-- **Baseline:** tres grupos definidos mediante demanda histórica baja/media/alta, utilizando puntos de corte (por ejemplo, terciles) calculados únicamente con el periodo de desarrollo. Es una segmentación sencilla, transparente y fácil de explicar.
-- **Modelo candidato:** `KMeans` aplicado a las variables estandarizadas. Probar valores pequeños y razonables de `k` (por ejemplo, de 2 a 6), usando semilla fija y varias inicializaciones.
-- **Métrica principal — Silhouette Score:** mide si las estaciones están relativamente cercanas a otras de su grupo y separadas de otros grupos; valores mayores suelen indicar grupos más definidos, aunque no garantizan utilidad operativa.
-- **Criterios complementarios:** tamaño y equilibrio de los grupos, interpretación de sus perfiles (horarios y demanda), estabilidad de asignaciones en meses posteriores y visualización sobre el mapa de Guadalajara.
-- **Decisión asociada:** describir tipos de estaciones y localizar zonas con patrones de movilidad diferentes que ameriten análisis de capacidad o expansión.
-- **Comparación justa:** calcular Silhouette sobre **la misma matriz de características escaladas** para el baseline y para K-Means. Si una solución produce un solo grupo o un grupo por estación, Silhouette no aplica y debe reportarse como no calculable.
+Se agrupan estaciones según su comportamiento histórico, sin variable objetivo supervisada ni horizonte de predicción. En la implementación revisada se utilizaron **12 meses de viajes**, de octubre de 2025 a septiembre de 2026, y **470 estaciones** tras aplicar un mínimo de **100 salidas** por estación durante el periodo.
 
-**Evaluación temporal propuesta:** construir perfiles usando octubre de 2025–mayo de 2026; utilizar junio–julio para seleccionar características y `k`; evaluar estabilidad con agosto–septiembre sin redefinir retrospectivamente los grupos. Comparar estaciones con cobertura histórica suficientemente consistente. El clustering carece de etiquetas verdaderas; un buen Silhouette por sí solo no demuestra que las agrupaciones sean útiles.
+El módulo `mibici/feature_engineering/clustering.py` construye siete indicadores iniciales: viajes diarios, balance relativo de llegadas frente a salidas, proporción de salidas en fin de semana y proporciones por mañana, mediodía, tarde y noche.
 
-## 5. Protocolo común de evaluación y trazabilidad
+Para el entrenamiento se elimina la franja **noche**, redundante con las otras proporciones horarias; se aplica `log1p` a los viajes diarios y `StandardScaler` a las **seis características** restantes.
 
-1. Usar una ingesta compartida y versionada. Conservar identificadores del periodo y versión de datos en cada experimento.
-2. Para P1 y P2: partición cronológica propuesta **octubre 2025–mayo 2026 (entrenamiento), junio–julio 2026 (validación), agosto–septiembre 2026 (prueba)**. No mezclar aleatoriamente horas del futuro con el entrenamiento.
-3. Elegir variables, hiperparámetros y umbrales usando entrenamiento/validación. Reservar prueba para la evaluación final; no ajustar después en función del resultado de prueba.
-4. Mantener idénticas las definiciones de datos y conjuntos de evaluación para baseline y candidato de cada pregunta.
-5. Ejecutar los baselines desde scripts del repositorio, no únicamente desde notebooks.
-6. Registrar al menos una corrida MLflow por pregunta con nombre descriptivo, fecha inicial/final, versión de datos, semilla, parámetros, métricas con prefijos `val_` o `test_`, etiquetas de equipo/P1-P2-P3/commit y al menos un artefacto (gráfica de errores, matriz de confusión o mapa de clusters).
-7. No registrar identificadores de usuarios, credenciales ni archivos brutos con datos personales.
+### 4.2 Baseline y candidato
 
-## 6. Decisiones pendientes para la reunión del equipo
+**Baseline — Terciles de demanda.** Divide las estaciones en tres grupos de baja, media y alta demanda según sus viajes diarios.
 
-- Aprobar periodo de doce meses y cortes temporales.
-- **P2:** fijar fórmula, umbral y tratamiento de capacidades históricas/faltantes para la variable *proxy* de riesgo.
-- **P3:** fijar cobertura mínima de actividad por estación y el conjunto final de features, una vez explorados los datos.
-- Confirmar quién implementará y ejecutará cada baseline, así como la integración común en MLflow.
+**Candidato — K-Means.** Agrupa estaciones sobre las seis características escaladas, con:
+
+| Hiperparámetro | Valor |
+|---|---:|
+| `n_clusters` | 3 |
+| `random_state` | 42 |
+| `n_init` | 10 |
+
+Ambos métodos se evalúan mediante Silhouette Score **sobre la misma matriz estandarizada**, para que la comparación de separación de grupos sea consistente.
+
+### 4.3 Resultados verificados
+
+| Modelo | Estaciones | Grupos | Silhouette Score |
+|---|---:|---:|---:|
+| Baseline por terciles | 470 | 3 | 0.0732 |
+| K-Means | 470 | 3 | **0.1992** |
+
+K-Means mostró una separación relativa superior al baseline, aunque un Silhouette Score de 0.1992 todavía sugiere agrupaciones con superposición considerable.
+
+| Cluster | Estaciones | Perfil predominante |
+|---|---:|---|
+| 0 | 154 | Menor demanda, mayor proporción matutina y balance prácticamente neutro |
+| 1 | 198 | Mayor demanda, uso destacado al mediodía y por la tarde |
+| 2 | 118 | Demanda intermedia-baja, concentración vespertina y balance relativo negativo |
+
+Para apoyar la interpretación, se generó una visualización mediante **PCA de dos componentes**, que conserva aproximadamente **56.3 %** de la varianza de las características estandarizadas. PCA se utiliza únicamente para visualización: K-Means se entrena con las seis características.
+
+Las figuras `p3_baseline.png` y `p3_kmeans_pca.png` se generan desde `mibici/train_p3.py` y se registran como artefactos en el experimento `mibici-equipo31`.
+
+### 4.4 Interpretación y limitaciones
+
+Los grupos aportan información exploratoria para detectar estaciones con distintos niveles y horarios de actividad y posibles desbalances de flujo. **Un balance negativo no prueba falta de bicicletas**, ya que no se dispone del inventario real.
+
+El promedio diario de P3 se calculó considerando los días observados en el periodo completo; esto puede subestimar la intensidad de estaciones con incorporación tardía. Tampoco se ha demostrado todavía estabilidad de las asignaciones entre periodos. Por ello, los clusters no deben interpretarse como categorías operativas definitivas sin validación temporal y geográfica.
+
+## 5. Registro y reproducibilidad de los experimentos
+
+La estructura común conserva los datos en Parquet, las transformaciones reutilizables en el módulo `mibici` y el código de entrenamiento separado de los notebooks. Las ejecuciones se realizan desde la raíz del repositorio:
+
+```bash
+python -m mibici.dataset
+python -m mibici.train_p1
+python -m mibici.train_p3
+```
+
+Los scripts de P1 y P3 registran dos runs descriptivos por pregunta en **`mibici-equipo31`**, con parámetros, fechas de estudio, huella SHA-256 conjunta de los Parquet utilizados, métricas con prefijos de conjunto cuando corresponde, etiquetas `equipo`, `pregunta` y `git_commit`, y figuras como artefactos. El historial se consulta mediante MLflow Tracking con backend SQLite local.
+
+Para P2 se mantiene el mismo esquema de registro, que deberá comprobarse sobre el código y los runs definitivos. El archivo `run_all.py` coordina los módulos habilitados; su ejecución conjunta con las tres preguntas queda sujeta a integración y prueba.
+
+**Distinción de reproducibilidad:** una huella calculada durante el entrenamiento identifica el contenido de los archivos usados, pero no sustituye un manifiesto por archivo, con hash y conteo de registros, versionado en Git. La reproducibilidad completa requiere también verificar la instalación de dependencias y la regeneración de datos desde un entorno limpio.
+
+## 6. Criterios de evaluación y decisiones operativas
+
+| Pregunta | Qué indica una mejora | Decisión que puede apoyar | Precaución |
+|---|---|---|---|
+| P1 | Menores MAE/RMSE y menor error en horas pico frente al baseline | Anticipar demanda para planear redistribución | No usar información de horas futuras como predictor |
+| P2 | Mejor detección de la clase riesgo, con precision aceptable | Priorizar revisión de estaciones | El riesgo es un *proxy*, no disponibilidad observada |
+| P3 | Grupos más cohesionados, separados e interpretables | Analizar perfiles horarios y necesidades de infraestructura | Silhouette no demuestra estabilidad ni utilidad operativa por sí solo |
 
 ## 7. Referencias
 
-- scikit-learn developers. (s. f.). *Metrics and scoring: Quantifying the quality of predictions*. https://scikit-learn.org/stable/modules/model_evaluation.html
-- scikit-learn developers. (s. f.). *Clustering*. https://scikit-learn.org/stable/modules/clustering.html
-- scikit-learn developers. (s. f.). *Selecting the number of clusters with silhouette analysis on KMeans clustering*. https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
 - MiBici. (s. f.). *Datos abiertos*. https://mibici.net/es/datos-abiertos/
+- Scikit-learn developers. (s. f.). *Metrics and scoring: Quantifying the quality of predictions*. https://scikit-learn.org/stable/modules/model_evaluation.html
+- Scikit-learn developers. (s. f.). *Clustering*. https://scikit-learn.org/stable/modules/clustering.html
+- Scikit-learn developers. (s. f.). *Selecting the number of clusters with silhouette analysis on KMeans clustering*. https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+- MLflow. (s. f.). *MLflow Tracking*. https://mlflow.org/docs/latest/ml/tracking/
+
+**Documentos relacionados:** `references/definicion_datos.md`, `references/pipelines_ml.md` y `references/arquitectura_sistema.md`.

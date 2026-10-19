@@ -10,6 +10,16 @@ from mibici.feature_engineering.clustering import (
     baseline_p3,
     entrenar_kmeans_p3,
 )
+from mibici.feature_engineering.regresion import (
+    COLUMNAS_P1,
+    OBJETIVO_P1,
+    construir_panel_horario,
+    crear_features_p1,
+    dividir_temporal_p1,
+    baseline_p1,
+    entrenar_random_forest_p1,
+    es_hora_pico,
+)
 
 from mibici.config import PROCESSED_DATA_DIR
 
