@@ -2,210 +2,192 @@
 
 **Proyecto integrador de MLOps | Equipo 31**
 
-- Leonardo Cossío Dinorín | A01753898
-- Santiago Espinosa Domínguez | A01747478
-- Rafael Posadas Ruíz | A01747128
+**Integrantes:**
+- Leonardo Cossío Dinorín — A01753898
+- Santiago Espinosa Domínguez — A01747478
+- Rafael Posadas Ruíz — A01747128
 
-Este proyecto utiliza los datos abiertos del sistema de bicicletas públicas **MiBici** para estudiar la demanda de viajes, explorar posibles desequilibrios operativos y segmentar estaciones de acuerdo con sus patrones históricos de uso. El objetivo académico es construir un flujo **reproducible y trazable** de ingesta, preparación de datos, entrenamiento, evaluación y registro de experimentos con MLflow.
+**Repositorio:** https://github.com/LeoCossio/TC5061-Proyecto-Equipo31
 
-> **Estado:** proyecto en desarrollo. P3 (clustering) y P1 (regresión) ya funcionan; P2 y algunos elementos de integración se encuentran pendientes de validación por el equipo.
+## Descripción
 
-## 1. Preguntas de análisis
+Este proyecto analiza los datos abiertos del sistema de bicicletas públicas **MiBici** mediante tres problemas complementarios de aprendizaje automático: predicción de demanda, clasificación de riesgo indirecto de desbalance y segmentación de estaciones. La solución utiliza una ingesta común, código de entrenamiento reutilizable y registro de experimentos con MLflow.
 
-| Pregunta | Tipo de problema | Unidad de análisis | Objetivo | Modelo de referencia y candidato |
-|---|---|---|---|---|
-| **P1 — Demanda** | Regresión | Estación-hora | Estimar el número de viajes que iniciarán en la siguiente hora. | Media histórica / RandomForestRegressor (implementados). |
-| **P2 — Riesgo de desbalance** | Clasificación | Estación-hora | Estimar un **indicador proxy** de riesgo operativo en la siguiente hora a partir de flujos de viajes. | Frecuencia histórica / RandomForestClassifier (propuestos). |
-| **P3 — Perfiles de estaciones** | Clustering | Estación | Agrupar estaciones según demanda, balance y distribución temporal de salidas. Sin horizonte predictivo. | Terciles de demanda / K-Means (implementados). |
+**Estado:** los pipelines de **P1, P2 y P3 están implementados**, y el equipo ha comprobado la ejecución conjunta con `python -m mibici.run_all`. La verificación del manifiesto versionado de integridad de datos y la reproducción desde un clon limpio deben documentarse por separado cuando estén concluidas.
 
-**Importante:** los CSV de viajes no contienen inventarios históricos de bicicletas o anclajes libres. Por tanto, P2 **no predice directamente si una estación está vacía o llena**; su etiqueta es un indicador indirecto que debe definirse y documentarse con precisión.
+## 1. Preguntas y modelos
 
-## 2. Fuentes y datos
+| Pregunta | Tipo | Unidad / horizonte | Baseline | Modelo candidato | Evaluación |
+|---|---|---|---|---|---|
+| **P1 — Demanda** | Regresión | Estación-hora; próxima hora | Media histórica | `RandomForestRegressor` | MAE, RMSE y MAE en horas pico |
+| **P2 — Riesgo de desbalance** | Clasificación | Estación-hora; próxima hora | Persistencia del riesgo de la hora anterior | `RandomForestClassifier` | Precision, recall, F1 y PR-AUC |
+| **P3 — Perfiles de estaciones** | Clustering | Estación; sin horizonte predictivo | Terciles de demanda | `KMeans` (`k=3`) | Silhouette Score y análisis de perfiles |
 
-- **Fuente:** [MiBici — Datos abiertos](https://www.mibici.net/es/datos-abiertos/).
-- **Periodo:** octubre de 2025 a septiembre de 2026 (**12 meses**).
-- **Viajes originales reportados:** 4,497,877.
-- **Viajes procesados reportados:** 4,497,119, después de retirar 758 registros duplicados.
-- **Estaciones identificadas en viajes:** 471; **estaciones del catálogo de septiembre de 2026:** 484.
-- **Estaciones utilizadas en P3:** 470, tras excluir estaciones con menos de 100 salidas en el periodo.
-- **Campos operativos procesados:** `viaje_id`, `inicio`, `fin`, `origen_id`, `destino_id`.
-- **Catálogo de estaciones:** nomenclatura de septiembre de 2026, obtenida por el proceso de ingesta.
+**Alcance de P2:** el objetivo es un **indicador indirecto (*proxy*)** construido con flujos de viajes, no la ocupación real de bicicletas o anclajes. Se calcula la presión de desbalance como `abs(llegadas - salidas) / capacidad`, y el umbral de riesgo se establece mediante el percentil 90 de los datos de entrenamiento. La capacidad procede del catálogo disponible y no garantiza reflejar la capacidad histórica de cada estación durante todo el periodo.
 
-Los CSV mensuales se descargan y procesan desde `mibici/dataset.py`. Los datos generados se conservan localmente en `data/`, sin subirse al repositorio. No se utilizan identificadores de usuario, género ni año de nacimiento como variables de modelado.
+## 2. Datos y preparación
 
-**Versionado de datos:** el script de P3 registra en MLflow una huella SHA-256 calculada sobre los Parquet utilizados. **Pendiente:** crear y versionar en Git un manifiesto por archivo con conteos y hashes, y comprobar su integridad. La huella registrada en un run no sustituye ese manifiesto.
+- **Fuente:** [Portal de datos abiertos de MiBici](https://www.mibici.net/es/datos-abiertos/).
+- **Periodo:** octubre de 2025 a septiembre de 2026, con 12 CSV mensuales y catálogo de estaciones de septiembre de 2026.
+- **Registros originales:** 4,497,877.
+- **Registros procesados:** 4,497,119, tras eliminar 758 duplicados exactos.
+- **Estaciones:** 471 identificadas en viajes; 484 en el catálogo de septiembre de 2026.
+- **P3:** 470 estaciones después de exigir al menos 100 salidas durante el periodo.
+- **Campos procesados:** `viaje_id`, `inicio`, `fin`, `origen_id`, `destino_id`.
 
-Para más detalles, consultar [`references/definicion_datos.md`](references/definicion_datos.md) y [`references/limpieza_datos.md`](references/limpieza_datos.md).
+`mibici/dataset.py` descarga los insumos, normaliza campos y codificaciones, valida fechas y genera los 12 archivos Parquet. Los CSV y Parquet permanecen en `data/` y **no se suben a Git**. Los identificadores de usuario y los atributos demográficos no se conservan en los Parquet para modelado.
 
-## 3. Organización del repositorio
+### Trazabilidad de datos
+
+Los entrenamientos registran en MLflow una huella SHA-256 de los datos utilizados, junto con parámetros y la versión de código. El equipo está incorporando un **manifiesto versionado por archivo** que permita verificar nombres, cantidades de registros y hashes SHA-256. El manifiesto debe añadirse a Git y ejecutarse su verificación antes de dar este requisito por completado; no debe confundirse con el hash agregado de un experimento.
+
+Detalles: [`references/definicion_datos.md`](references/definicion_datos.md) y [`references/limpieza_datos.md`](references/limpieza_datos.md).
+
+## 3. Estructura del repositorio
 
 ```text
 .
-├── data/                         # Datos locales: raw, external, interim, processed (ignorados por Git)
+├── data/                         # Insumos y Parquet locales; ignorados por Git
+│   ├── raw/
+│   ├── external/
+│   └── processed/
 ├── mibici/
-│   ├── config.py                 # Rutas y configuración compartida; fechas y semilla de P3
-│   ├── dataset.py                # Descarga, limpieza y creación de Parquet
-│   ├── features.py               # Acceso a funciones de ingeniería de características
+│   ├── config.py                 # Configuración compartida
+│   ├── dataset.py                # Ingesta y limpieza
+│   ├── features.py               # Acceso a ingeniería de características
 │   ├── feature_engineering/
-│   │   ├── clustering.py         # Características, baseline y K-Means de P3
-│   │   └── regresion.py          # Panel estación-hora, características, baseline y RandomForest de P1
-│   ├── train_p1.py               # Entrenamiento y registro de P1 en MLflow
-│   ├── train_p3.py               # Entrenamiento y registro de P3 en MLflow
-│   └── run_all.py                # Coordinador provisional de P1, P2 y P3
-├── notebooks/                    # Exploración y análisis
-├── models/                       # Modelos generados localmente (no versionados)
-├── references/                   # Definición de datos, modelos, pipelines y arquitectura
-├── reports/
-│   └── figures/                 # Gráficas para el reporte
-├── tests/                        # Pruebas automatizadas
-├── requirements.txt              # Dependencias de Python
-├── pyproject.toml                # Configuración del proyecto
+│   │   ├── regresion.py          # Variables de P1
+│   │   ├── classification.py     # Variables y etiquetas de P2
+│   │   └── clustering.py         # Variables de P3
+│   ├── train_p1.py               # Regresión y MLflow
+│   ├── train_p2.py               # Clasificación y MLflow
+│   ├── train_p3.py               # Clustering y MLflow
+│   └── run_all.py                # Ejecución conjunta de P1, P2 y P3
+├── notebooks/                    # Exploración
+├── models/                       # Artefactos locales no versionados
+├── references/                   # Documentación técnica
+├── reports/figures/              # Figuras del análisis
+├── tests/                        # Pruebas
+├── requirements.txt              # Dependencias
+├── pyproject.toml
 └── README.md
 ```
 
-La estructura parte de **Cookiecutter Data Science (CCDS)** con `include_code_scaffold=Yes`. Los scripts de P1 y P2 se incorporarán conforme estén disponibles.
+La organización se basa en **Cookiecutter Data Science** y separa la exploración en notebooks de la ejecución de modelos mediante módulos de Python. Los scripts o archivos adicionales del manifiesto se incorporarán a este esquema al integrarse su PR.
 
 ## 4. Instalación
 
-Requisitos: **Python 3.13** utilizado durante el desarrollo, Git y acceso a Internet para descargar los archivos públicos. La compatibilidad en otras versiones de Python deberá verificarse.
-
-Desde la raíz del repositorio:
+El equipo desarrolló el proyecto con **Python 3.13**. Se necesita Git y conexión a Internet para la primera descarga de datos. Desde una terminal de PowerShell:
 
 ```powershell
-# Clonar (si aún no lo tienes)
 git clone https://github.com/LeoCossio/TC5061-Proyecto-Equipo31.git
 cd TC5061-Proyecto-Equipo31
-
-# Crear y activar entorno virtual (Windows / PowerShell)
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-
-# Instalar dependencias
 python -m pip install -r requirements.txt
 ```
 
-> **Pendiente:** verificar que `requirements.txt` incluya todas las dependencias de P1, P2 y P3 y que sus versiones estén fijadas. La creación del entorno no garantiza reproducibilidad completa mientras esto siga pendiente.
+Ejecutar siempre los comandos siguientes desde la **raíz del repositorio**. La reproducción en otro entorno depende de utilizar versiones compatibles de Python y las dependencias especificadas.
 
 ## 5. Ejecución
 
-Todos los comandos siguientes se ejecutan desde la **raíz del repositorio**.
-
-### 5.1 Descargar y preparar datos
+### 5.1 Descargar y procesar los datos
 
 ```powershell
 python -m mibici.dataset
 ```
 
-Este comando corresponde a la interfaz Typer utilizada y probada durante el desarrollo. Al terminar deben existir **12 archivos Parquet** en `data/processed/`. La nomenclatura de estaciones también se descarga durante la ingesta.
+Al finalizar deben existir 12 Parquet mensuales en `data/processed/` y el catálogo en `data/external/`.
 
-### 5.2 Ejecutar P3 (baseline y K-Means)
-
-```powershell
-python -m mibici.train_p3
-```
-
-El script registra dos runs en el experimento MLflow `mibici-equipo31`:
-
-- `P3-baseline-demanda`: agrupación en terciles por demanda histórica.
-- `P3-kmeans-k3`: K-Means con tres grupos, seis características escaladas, `random_state=42` y `n_init=10`.
-
-Se registran parámetros, métricas, etiquetas (`equipo`, `pregunta`, `git_commit`) y gráficas. El backend utilizado es una base de datos SQLite local, `mlflow.db`.
-
-### 5.3 Ejecutar P1 (baseline y RandomForest)
+### 5.2 Entrenar cada pregunta por separado
 
 ```powershell
 python -m mibici.train_p1
+python -m mibici.train_p2
+python -m mibici.train_p3
 ```
 
-El script registra dos runs en el experimento MLflow `mibici-equipo31`:
+Cada script registra el baseline y el modelo candidato en el experimento **`mibici-equipo31`**, con métricas, parámetros, etiquetas y artefactos pertinentes a su pregunta.
 
-- `P1-baseline-media-historica`: media histórica de la estación para el mismo día de la semana y hora, calculada solo con semanas anteriores.
-- `P1-random-forest`: `RandomForestRegressor` con hora, día de la semana, rezagos de 1, 2, 3, 24 y 168 horas, promedios móviles y promedios históricos de la estación.
-
-La partición es cronológica: entrenamiento hasta mayo de 2026, validación en junio–julio y prueba en agosto–septiembre. Se registran `val_` y `test_` de `mae`, `rmse` y `mae_horas_pico`, además de gráficas de perfil horario e importancia de variables.
-
-### 5.4 Ejecutar los modelos habilitados
+### 5.3 Ejecutar los tres pipelines
 
 ```powershell
 python -m mibici.run_all
 ```
 
-**Estado actual:** el coordinador comprueba los 12 Parquet y ejecuta **P1 y P3**. P2 permanece deshabilitado hasta integrar y probar su script. Este comando **no realiza la descarga automáticamente**; ejecutar primero la ingesta si faltan los datos.
+Este comando coordina P1, P2 y P3 utilizando los Parquet ya preparados; **no sustituye la descarga de datos**. Su ejecución conjunta fue comprobada por el equipo.
 
-### 5.5 Consultar experimentos en MLflow
+### 5.4 Visualizar los experimentos
 
 ```powershell
 mlflow ui --backend-store-uri "sqlite:///mlflow.db"
 ```
 
-Abrir <http://127.0.0.1:5000> y seleccionar el experimento `mibici-equipo31`. Para comparar modelos, seleccionar sus runs y utilizar **Compare**.
+Abrir http://127.0.0.1:5000 y seleccionar `mibici-equipo31`. Es posible revisar los runs individuales, descargar sus artefactos y comparar el baseline con el modelo candidato mediante **Compare**. La base de datos local de MLflow no se versiona en Git; para reproducir las corridas hay que ejecutar los scripts con las entradas y dependencias correspondientes.
 
-**Nota:** la base de datos y los artefactos locales de MLflow no se almacenan en Git. Para reproducir los runs en otra máquina, se deben ejecutar nuevamente los scripts con la misma versión de código, datos y dependencias. Para preservar el historial original, debe respaldarse por separado el almacenamiento de MLflow.
+## 6. Resultados y evaluación
 
-## 6. Resultados preliminares de P3
+**P1.** Compara la media histórica con `RandomForestRegressor` usando una separación cronológica: entrenamiento de octubre de 2025 a mayo de 2026, validación en junio–julio y prueba en agosto–septiembre. Consulta los valores de MAE, RMSE y error en horas pico en MLflow; las cifras dependen de la corrida documentada.
+
+**P2.** Construye una etiqueta binaria de riesgo *proxy* de desbalance. Compara un baseline de persistencia con un `RandomForestClassifier` ajustado, y evalúa precision, recall, F1, PR-AUC y matriz de confusión en los periodos cronológicos correspondientes. Las variables futuras usadas para definir la etiqueta no deben emplearse como predictores.
+
+**P3.** Compara terciles de demanda frente a K-Means sobre las mismas seis características estandarizadas:
 
 | Modelo | Estaciones | Grupos | Silhouette Score |
 |---|---:|---:|---:|
-| Terciles de demanda (baseline) | 470 | 3 | 0.0732 |
-| K-Means | 470 | 3 | **0.1992** |
+| Baseline por terciles de demanda | 470 | 3 | 0.0732 |
+| K-Means (`k=3`) | 470 | 3 | **0.1992** |
 
-Los grupos de K-Means contienen **154, 198 y 118 estaciones**. La visualización con PCA de dos dimensiones conserva alrededor del **56.3 %** de la varianza de las características escaladas.
+K-Means produjo grupos de 154, 198 y 118 estaciones. Una proyección PCA de dos componentes representa aproximadamente el **56.3 % de la varianza**, únicamente con fines de visualización. La separación relativa mejora frente al baseline, aunque los grupos tienen superposición y no se ha demostrado todavía estabilidad temporal.
 
-La mejora de Silhouette indica mayor separación relativa frente al baseline, **no precisión predictiva ni validación operativa**. Aún deben evaluarse la estabilidad temporal, la cobertura histórica de cada estación y la utilidad geográfica de la segmentación.
-
-Las figuras se encuentran en `reports/figures/` y el desarrollo exploratorio en `notebooks/1.0-lc-exploracion-estaciones.ipynb`.
+Detalles metodológicos: [`references/modelos_metricas.md`](references/modelos_metricas.md) y [`references/pipelines_ml.md`](references/pipelines_ml.md).
 
 ## 7. Flujo de trabajo con Git y GitHub
 
-Se adopta **GitHub Flow**:
+El equipo utiliza **GitHub Flow**, con los siguientes acuerdos:
 
-1. La rama **`main` está protegida**. Los cambios se desarrollan en ramas independientes y se integran mediante **Pull Requests**.
-2. Crear una rama desde una base actualizada. Convención: `feature/p1-regression`, `feature/p2-clasificacion`, `feature/p3-clustering` o `docs/descripcion`.
-3. Realizar cambios y registrar commits descriptivos siguiendo **Conventional Commits**, por ejemplo:
-   - `feat(p3): implement station clustering with KMeans and MLflow`
-   - `fix(data): correct duplicated command decorator`
-   - `docs: complete reproducibility instructions`
-4. Publicar la rama (`git push -u origin nombre-de-rama`) y abrir un Pull Request dirigido a `main`.
-5. Solicitar revisión a otro integrante; atender comentarios y **fusionar solo cuando se cumplan las reglas de protección**.
-6. Cada integrante debe **abrir al menos un PR y revisar al menos un PR ajeno**. Conservar los enlaces de evidencia para el reporte final.
+1. **`main` protegida:** los cambios no se incorporan mediante pushes directos, sino mediante **Pull Requests (PR)** dirigidos a `main`.
+2. **Ramas por propósito:** `feature/p1-regression`, `feature/p2-clasificacion`, `feature/p3-clustering`, `feature/data-manifest`, `fix/descripcion` o `docs/descripcion`. Cada rama debe partir de la versión actualizada de `main` siempre que sea posible.
+3. **Conventional Commits:** mensajes con tipo, alcance opcional y descripción breve, como `feat(p2): implement risk classifier`, `fix(data): handle csv encoding` o `docs: update project references`.
+4. **Revisión antes de fusionar:** se publica una rama, se abre un PR hacia `main`, se solicita revisión y se atienden observaciones antes de integrarlo, respetando las reglas de protección configuradas.
+5. **Participación individual:** **cada integrante debe abrir al menos un PR y realizar al menos una revisión del PR de otra persona**. La evidencia verificable son los PR y las revisiones registradas en GitHub; la presencia de commits por sí sola no acredita una revisión.
 
-Enlaces: [Repositorio](https://github.com/LeoCossio/TC5061-Proyecto-Equipo31) · [Pull Requests](https://github.com/LeoCossio/TC5061-Proyecto-Equipo31/pulls).
+Enlaces: [Repositorio](https://github.com/LeoCossio/TC5061-Proyecto-Equipo31) · [Pull Requests](https://github.com/LeoCossio/TC5061-Proyecto-Equipo31/pulls) · [PR cerrados](https://github.com/LeoCossio/TC5061-Proyecto-Equipo31/pulls?q=is%3Apr+is%3Aclosed).
+
+> **Verificación final de Git:** antes de entregar, comprobar en GitHub que los tres integrantes cumplieron individualmente con un PR abierto y una revisión ajena. No se atribuyen revisiones o aprobaciones que no estén comprobadas en la plataforma.
 
 ## 8. Integrantes y responsabilidades
 
-| Integrante | Responsabilidad principal | Estado |
-|---|---|---|
-| **[Nombre del integrante P1]** | Regresión: predicción de demanda por estación-hora | En integración |
-| **[Nombre del integrante P2]** | Clasificación: riesgo proxy de desbalance e ingesta compartida (confirmar roles) | En integración |
-| **[Nombre del integrante P3]** | Clustering: análisis exploratorio, ingeniería de características, baseline, K-Means y MLflow | Implementado; PR sujeto a revisión |
+| Integrante | Responsabilidad principal |
+|---|---|
+| Leonardo Cossío Dinorín | P3: exploración, segmentación por estaciones, K-Means y MLflow |
+| Santiago Espinosa Domínguez | P2: clasificación de riesgo y contribuciones a la ingesta compartida |
+| Rafael Posadas Ruíz | P1: predicción de demanda mediante regresión |
 
-> **Pendiente del equipo:** sustituir los nombres entre corchetes, confirmar los roles y agregar los enlaces a los PR revisados. Si una persona realizó más de una tarea, reflejarlo en la tabla.
+Las contribuciones definitivas y las revisiones se acreditan mediante el historial de commits y Pull Requests de GitHub.
 
-## 9. Documentación y pendientes
+## 9. Documentación y verificaciones finales
 
-Se incluyen los siguientes documentos de diseño en `references/`:
+- [`references/arquitectura_sistema.md`](references/arquitectura_sistema.md): componentes, decisiones técnicas y diagrama.
+- [`references/definicion_datos.md`](references/definicion_datos.md): fuentes, periodo, variables, privacidad y particiones.
+- [`references/limpieza_datos.md`](references/limpieza_datos.md): controles de calidad e ingesta.
+- [`references/modelos_metricas.md`](references/modelos_metricas.md): baselines, modelos y métricas.
+- [`references/pipelines_ml.md`](references/pipelines_ml.md): flujos reproducibles por pregunta.
 
-- [`definicion_datos.md`](references/definicion_datos.md): fuentes, tamaño y variables.
-- [`pipelines_ml.md`](references/pipelines_ml.md): etapas de preparación, modelado y evaluación.
-- [`modelos_metricas.md`](references/modelos_metricas.md): baselines, candidatos y métricas.
-- [`arquitectura_sistema.md`](references/arquitectura_sistema.md): componentes, decisiones y diagrama de arquitectura.
+**Comprobaciones pendientes de cierre documental:**
 
-**Antes de entregar:**
+- [ ] Integrar y verificar el manifiesto Git de datos con SHA-256 y conteos por archivo.
+- [ ] Comprobar desde un clon limpio la instalación, ingesta y ejecución conjunta con el conjunto de dependencias fijado.
+- [ ] Confirmar en GitHub un PR y una revisión ajena por cada integrante.
+- [ ] Confirmar que las capturas finales de MLflow muestran lista de runs, parámetros/métricas/etiquetas, artefacto y comparación de modelos con el commit correspondiente.
+- [ ] Incorporar al PDF los resultados verificados de P1/P2 y las evidencias de los tres pipelines.
 
-- [ ] Integrar y ejecutar baselines de P1 y P2 desde scripts del repositorio.
-- [ ] Fijar y verificar todas las versiones de `requirements.txt`.
-- [ ] Crear el manifiesto Git de datos (conteos y hashes SHA-256 por archivo) y validar integridad.
-- [ ] Actualizar la documentación de diseño para reflejar la implementación final, sin dejar estados desactualizados.
-- [ ] Confirmar integrantes, roles y evidencias de PR/revisiones.
-- [ ] Probar la instalación, ingesta y ejecución en un clon limpio.
-- [ ] Reejecutar los experimentos tras los commits definitivos para registrar etiquetas `git_commit` correctas.
-- [ ] Preparar las capturas de MLflow: lista de runs, detalle, artefacto y comparación.
-
-## 10. Referencias
+## 10. Fuentes y herramientas
 
 - [MiBici — Datos abiertos](https://www.mibici.net/es/datos-abiertos/)
-- [MLflow — Tracking](https://mlflow.org/docs/latest/ml/tracking/)
-- [Scikit-learn — Evaluación de modelos](https://scikit-learn.org/stable/modules/model_evaluation.html)
+- [MLflow Tracking](https://mlflow.org/docs/latest/ml/tracking/)
+- [scikit-learn — Evaluación de modelos](https://scikit-learn.org/stable/modules/model_evaluation.html)
 - [Cookiecutter Data Science](https://cookiecutter-data-science.drivendata.org/)
 - [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow)
+- [GitHub — Ramas protegidas](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 - [Conventional Commits](https://www.conventionalcommits.org/es/v1.0.0/)

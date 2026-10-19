@@ -1,6 +1,6 @@
 # Definición de datos — Proyecto MiBici (Equipo 31)
 
-**Versión:** documentación de la solución para la primera entrega  
+**Versión:** documentación actualizada de P1, P2 y P3 para la entrega  
 **Periodo de análisis:** 1 de octubre de 2025 al 30 de septiembre de 2026  
 **Alcance:** datos compartidos para P1 (regresión), P2 (clasificación) y P3 (clustering).
 
@@ -81,12 +81,15 @@ Estas variables se encuentran implementadas en `mibici/feature_engineering/regre
 
 ### 3.3 P2 — Clasificación de riesgo estimado de desbalance
 
-- **Unidad de análisis:** estación-hora; horizonte de la hora siguiente.
-- **Resultado definido en el ML Canvas:** indicador binario de **riesgo indirecto de desbalance** basado en las salidas y llegadas, no en una medición directa de bicicletas disponibles o espacios libres.
-- **Construcción de la etiqueta prevista:** calcular el balance neto de flujos de la hora objetivo y relacionarlo con la capacidad de la estación cuando exista información válida. Una regla de umbral permitirá etiquetar episodios de riesgo. La fórmula, el umbral numérico y el manejo de capacidades ausentes deben corresponder a la implementación final de P2; **no se fijan valores no documentados**.
-- **Características previstas:** hora y día, salidas y llegadas históricas, rezagos, balances históricos y capacidad verificada cuando sea pertinente.
+- **Unidad de análisis:** estación-hora. Cada fila contiene las variables disponibles antes de la hora evaluada y una etiqueta para esa hora; el horizonte operativo es de **una hora**.
+- **Fuentes:** viajes procesados y nomenclatura de septiembre de 2026, de la cual `cargar_capacidades()` obtiene `id` y `dpcapacity` (identificador y capacidad). Se excluyen estaciones sin capacidad válida, y el panel comienza en la primera hora con actividad registrada por estación; las horas sin movimientos se completan con ceros.
+- **Presión de desbalance:** para cada estación-hora se calcula `flujo_neto = llegadas - salidas` y `presion_desbalance = abs(flujo_neto) / capacidad`. El valor captura la intensidad relativa del desbalance de flujos, **no** inventario ni ocupación reales.
+- **Etiqueta binaria:** `riesgo_siguiente_hora = 1` cuando la presión de la hora objetivo es mayor o igual al **percentil 90 de la presión calculado exclusivamente con el conjunto de entrenamiento**; en otro caso vale 0. El umbral resultante se aplica sin reajustar a validación y prueba. No se usa un umbral numérico arbitrario.
+- **Características predictoras:** 13 variables: `hora`, `dia_semana`, `fin_semana`, `capacidad`, `salidas_lag_1`, `llegadas_lag_1`, `flujo_neto_lag_1`, `presion_lag_1`, `presion_lag_2`, `presion_lag_24`, `presion_lag_168`, `presion_media_24` y `presion_media_168`. Los rezagos y las medias se calculan solo con horas anteriores a la hora objetivo.
+- **Preparación:** se descartan las primeras 168 horas de cada estación para disponer del historial requerido. Las variables de P2 se implementaron en `mibici/feature_engineering/classification.py` y el entrenamiento en `mibici/train_p2.py`.
+- **Modelos:** baseline de **persistencia** (alerta si la presión de la hora anterior supera el umbral de riesgo) y `RandomForestClassifier` optimizado. La evaluación registra precision, recall, F1 y PR-AUC para validación y prueba, además de matrices de confusión como artefactos de MLflow.
 
-La etiqueta puede calcularse utilizando los viajes observados durante la hora futura para fines de entrenamiento y evaluación. Esos mismos valores futuros **no deben incorporarse como predictores**, pues causarían fuga de información. Los CSV no permiten reconstruir directamente el inventario real de bicicletas o anclajes libres.
+**Limitación:** se utiliza la capacidad del catálogo de septiembre de 2026 como referencia para el periodo completo. No se comprobó que permaneciera constante en cada estación durante los doce meses. Además, el indicador mide presión de flujos: no permite afirmar que una estación estuviera vacía o llena. La presión de la hora evaluada solo se usa para etiquetar, nunca como característica predictora de esa misma hora.
 
 ### 3.4 P3 — Clustering de estaciones
 
@@ -123,9 +126,13 @@ P1 utiliza una separación cronológica implementada mediante `dividir_temporal_
 
 La construcción de rezagos, promedios móviles y estadísticas históricas de P1 excluye la hora objetivo y las horas posteriores. Los hiperparámetros y la semilla del experimento se centralizan en `config.py`. El baseline utiliza medias históricas causales, con alternativas de respaldo para observaciones sin suficiente historia.
 
-### 5.2 P2 — Estrategia definida
+### 5.2 P2 — Partición implementada y umbral de clasificación
 
-La solución de P2 sigue el mismo criterio de **partición cronológica** (entrenamiento: octubre de 2025 a mayo de 2026; validación: junio y julio; prueba: agosto y septiembre). Las variables predictoras se calculan solo con hechos anteriores a la hora objetivo. Los valores de la siguiente hora se reservan para construir la etiqueta de riesgo, no para alimentar el modelo. La separación debe verificarse contra `train_p2.py` cuando se incorpore su implementación al repositorio.
+P2 utiliza una partición cronológica implementada mediante `dividir_temporal_p2()` en `classification.py`, con fechas de corte **1 de junio de 2026** y **1 de agosto de 2026**, definidas en `train_p2.py`. Por tanto, los conjuntos comprenden entrenamiento (octubre de 2025 a mayo de 2026), validación (junio y julio de 2026) y prueba (agosto y septiembre de 2026), después de retirar las horas iniciales necesarias para los rezagos.
+
+El umbral que determina el riesgo se calcula usando **únicamente la presión observada en entrenamiento** (`cuantíl = 0.90`) y se reutiliza para etiquetar validación y prueba. Los predictores históricos se desplazan respecto de la hora objetivo, evitando introducir sus salidas y llegadas futuras como entrada. El baseline utiliza `presion_lag_1`, mientras que el Random Forest utiliza las 13 características históricas y de calendario.
+
+La configuración del experimento P2 (fechas, semilla, cuantil y parámetros del modelo) está declarada actualmente en `mibici/train_p2.py`; para cumplir estrictamente la centralización solicitada en la rúbrica, estos valores deberán trasladarse a `mibici/config.py`.
 
 ### 5.3 P3 — Evaluación de agrupaciones históricas
 
@@ -133,16 +140,16 @@ P3 construye perfiles de estaciones con **el periodo completo de octubre de 2025
 
 ## 6. Versionado y trazabilidad de datos
 
-El entrenamiento de P1 y P3 incorpora una **huella SHA-256 combinada** sobre los doce Parquet utilizados, junto con los nombres de archivo; la registra en MLflow como `data_version`. También conserva el intervalo temporal y el commit de Git en los registros correspondientes. Esta huella permite distinguir conjuntos de archivos efectivamente usados en distintos runs.
+Los scripts de P1, P2 y P3 pueden identificar los doce Parquet utilizados mediante una **huella SHA-256 combinada**. P2 reutiliza `version_datos()` desde `mibici/train_p3.py`; los runs de MLflow registran la huella como `data_version`, el periodo, los parámetros del experimento y el commit de Git, junto con métricas y artefactos de cada tarea.
 
-Para satisfacer el requisito de **versionado verificable desde Git**, la arquitectura contempla asimismo un manifiesto por archivo con nombre, cantidad de registros y SHA-256. **El manifiesto independiente no se encuentra demostrado en el código revisado**, por lo que no debe confundirse con el hash combinado registrado por los scripts de entrenamiento.
+El manifiesto versionado en Git con **nombre, conteo de registros y SHA-256 por archivo**, así como su verificación de integridad, es un requisito adicional al hash combinado. Su implementación se está completando por separado y **debe comprobarse antes de cerrar la entrega**. No se presenta aquí como ejecutada o verificada.
 
 ## 7. Síntesis
 
-El conjunto de datos se preparó con una ingesta compartida y doce archivos Parquet de estructura uniforme. P1 utiliza un panel cronológico estación-hora para predicción de demanda; P2 adopta un indicador proxy de riesgo de desbalance diseñado sobre flujos; y P3 analiza perfiles históricos agregados por estación. La separación entre datos crudos, procesados, modelos y artefactos, junto con las etiquetas de MLflow y el historial de Git, aporta trazabilidad al proyecto.
+El conjunto de datos se preparó con una ingesta compartida y doce archivos Parquet de estructura uniforme. P1 utiliza un panel cronológico estación-hora para predicción de demanda; P2 clasifica el riesgo proxy de desbalance mediante la presión neta de flujos normalizada por capacidad y un umbral aprendido del entrenamiento; y P3 analiza perfiles históricos agregados por estación. La separación entre datos crudos, procesados, modelos y artefactos, junto con las etiquetas de MLflow y el historial de Git, aporta trazabilidad al proyecto.
 
 ## Referencias
 
 - MiBici. (s. f.). *Datos abiertos*. https://www.mibici.net/es/datos-abiertos/
 - MiBici. (s. f.). *Aviso de privacidad*. https://www.mibici.net/es/aviso-de-privacidad/
-- Documentación técnica del proyecto: `mibici/dataset.py`, `mibici/feature_engineering/regresion.py`, `mibici/feature_engineering/clustering.py`, `mibici/train_p1.py`, `mibici/train_p3.py` y `mibici/config.py`.
+- Documentación técnica del proyecto: `mibici/dataset.py`, `mibici/feature_engineering/regresion.py`, `mibici/feature_engineering/clustering.py`, `mibici/feature_engineering/classification.py`, `mibici/train_p1.py`, `mibici/train_p2.py`, `mibici/train_p3.py` y `mibici/config.py`.
