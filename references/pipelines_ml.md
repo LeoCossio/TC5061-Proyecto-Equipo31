@@ -1,158 +1,165 @@
 # Pipelines de Machine Learning — MiBici (Equipo 31)
 
 **Periodo de análisis:** octubre de 2025 a septiembre de 2026 (12 meses).  
-**Enfoque:** procesamiento por lotes, código reutilizable y experimentos trazables.  
-**Cobertura:** P1 (regresión), P2 (clasificación de un indicador indirecto) y P3 (clustering).
+**Enfoque:** procesamiento local por lotes, transformaciones reutilizables y trazabilidad con MLflow.  
+**Cobertura:** P1 (regresión), P2 (clasificación de riesgo indirecto) y P3 (clustering).
 
 ## 1. Objetivo y pipeline común
 
-Se establece una ingesta compartida para evitar diferencias de limpieza entre las tres preguntas, seguida de transformaciones y modelos específicos. P1 y P3 tienen implementaciones en el módulo del repositorio; el flujo de P2 se describe conforme a la definición adoptada en el ML Canvas y requiere contrastarse con el script final de clasificación.
+El proyecto comparte una sola etapa de descarga y limpieza de datos, seguida de tres pipelines de entrenamiento y evaluación independientes. Los modelos utilizan los doce archivos Parquet mensuales generados por `mibici/dataset.py`. Cada pregunta cuenta con agregaciones, variables, método de referencia y modelo candidato específicos, ejecutados desde scripts del repositorio en lugar de depender de los notebooks.
 
 ```mermaid
 flowchart TD
-    A[MiBici: 12 CSV mensuales] --> C[Ingesta y limpieza: mibici/dataset.py]
-    B[Catálogo de estaciones: septiembre de 2026] --> C
-    C --> D[(data/processed/: Parquet mensuales)]
-    D --> F1[P1: panel estación-hora y rezagos]
-    D --> F2[P2: flujos y balances estación-hora]
-    D --> F3[P3: perfiles históricos por estación]
-    F1 --> M1[Media histórica / RandomForestRegressor]
-    F2 --> M2[Frecuencia histórica / RandomForestClassifier]
-    F3 --> M3[Terciles de demanda / KMeans]
-    M1 --> E[MLflow: parámetros, métricas y artefactos]
-    M2 --> E
-    M3 --> E
-    G[Git y versión de los datos] -.-> E
+    A["MiBici: 12 CSV mensuales"] --> I["Descarga y limpieza: mibici/dataset.py"]
+    B["Catálogo de estaciones: septiembre 2026"] --> I
+    I --> C[("data/processed/: Parquet por mes")]
+    C --> F1["P1: panel estación-hora y demanda histórica"]
+    C --> F2["P2: panel estación-hora, flujos y presión de desbalance"]
+    B --> F2
+    C --> F3["P3: perfiles históricos por estación"]
+    F1 --> M1["Media histórica / RandomForestRegressor"]
+    F2 --> M2["Persistencia / RandomForestClassifier"]
+    F3 --> M3["Terciles de demanda / KMeans"]
+    M1 --> ML["MLflow Tracking: parámetros, métricas, etiquetas y artefactos"]
+    M2 --> ML
+    M3 --> ML
+    G["Git: commit del código + SHA-256 de datos"] -.-> ML
+    R["mibici/run_all.py: ejecuta P1, P2 y P3"] -.-> M1
+    R -.-> M2
+    R -.-> M3
 ```
 
-### 1.1 Descarga, normalización y almacenamiento
+### 1.1 Ingesta y limpieza compartidas
 
-`mibici/dataset.py` descarga los doce archivos de viajes y la nomenclatura de estaciones, normaliza nombres de columnas y tipos, gestiona las codificaciones UTF-8 y CP1252, elimina duplicados exactos y registros inválidos, y guarda los datos depurados en Parquet con PyArrow. Los campos operativos conservados son `viaje_id`, `inicio`, `fin`, `origen_id` y `destino_id`; no se conservan identificadores de usuario ni atributos demográficos en los Parquet procesados.
+`mibici/dataset.py` descarga los doce CSV de viajes y la nomenclatura, normaliza nombres de columnas y fechas, contempla UTF-8 y CP1252, elimina registros duplicados o inválidos y conserva cinco columnas operativas: `viaje_id`, `inicio`, `fin`, `origen_id` y `destino_id`. Los datos se almacenan por mes en Parquet con PyArrow y compresión Snappy.
 
-En la ingesta realizada por el equipo se reportaron **4,497,877 registros originales, 758 duplicados eliminados y 4,497,119 viajes procesados**, distribuidos en doce archivos Parquet. Se identificaron 471 estaciones en los viajes y 484 en la nomenclatura. Las estaciones 405 y 407 aparecen en los viajes pero no en el catálogo de septiembre de 2026, por lo que su cobertura debe interpretarse con cautela.
+El equipo reportó **4,497,877 viajes originales**, **758 duplicados eliminados** y **4,497,119 registros procesados**. Los doce Parquet se mantienen en `data/processed/`, fuera de Git. La nomenclatura de estaciones se conserva en `data/external/`.
 
-La ingesta se ejecuta desde la raíz del repositorio con:
+Para ejecutar la ingesta, desde la raíz del repositorio:
 
 ```powershell
 python -m mibici.dataset
 ```
 
-Los archivos de datos permanecen fuera de Git. Los scripts P1 y P3 generan un hash SHA-256 conjunto del contenido de los Parquet utilizados y lo registran como `data_version` en MLflow. **La huella de ejecución no sustituye un manifiesto por archivo versionado en Git:** la existencia y validación de ese manifiesto debe verificarse por separado.
+Los scripts de entrenamiento registran en MLflow una huella SHA-256 de los Parquet utilizados. **El manifiesto por archivo, con hashes y conteos versionados en Git, se está integrando por separado**; registrar un hash combinado en MLflow no sustituye esa verificación de integridad.
 
 ## 2. P1 — Predicción de demanda por estación-hora
 
-**Pregunta:** ¿cuántos viajes iniciarán en una estación durante la próxima hora?  
+**Pregunta:** ¿cuántos viajes comenzarán en una estación durante la próxima hora?  
 **Granularidad:** estación-hora. **Horizonte:** una hora.  
-**Implementación:** `mibici/feature_engineering/regresion.py`, `mibici/features.py` y `mibici/train_p1.py`.
+**Módulos:** `mibici/feature_engineering/regresion.py`, `mibici/features.py` y `mibici/train_p1.py`.
 
 | Etapa | Implementación |
 |---|---|
-| Agregación | Cuenta viajes por `origen_id` y hora de `inicio`; construye un panel horario desde la primera salida observada de cada estación e incluye intervalos sin viajes como ceros. |
-| Objetivo | `viajes_siguiente_hora`: número de salidas en la hora objetivo de cada fila del panel. |
-| Características | Hora, día de semana, fin de semana; rezagos de **1, 2, 3, 24 y 168 horas**; medias móviles de **24 y 168 horas**; media histórica por estación y media histórica de estación/día/hora. |
-| Tratamiento temporal | Los rezagos y medias se calculan usando únicamente horas anteriores. Se descartan las primeras **168 horas** por estación para contar con historial suficiente. |
-| Baseline | Media histórica de la misma estación, día de la semana y hora; alternativas de media por estación o media global de entrenamiento cuando falte historial específico. |
-| Candidato | `RandomForestRegressor` con semilla fija; la configuración incluye 100 árboles, mínimo de 20 muestras por hoja y fracción de muestreo de 0.30. |
-| Evaluación | **MAE**, **RMSE** y **MAE en horas pico** (días laborales, 07:00–09:00 y 17:00–20:00), en validación y prueba. |
+| Agregación | Cuenta viajes iniciados por estación y hora, incluyendo intervalos sin viajes desde la primera actividad observada de la estación. |
+| Objetivo | Demanda de la hora objetivo, expresada como número de viajes iniciados. |
+| Características | Hora, día de la semana, fin de semana; rezagos de **1, 2, 3, 24 y 168 horas**; promedios móviles de **24 y 168 horas**; medias históricas por estación y por estación/día/hora. |
+| Prevención de fuga | Las variables históricas se construyen utilizando únicamente observaciones anteriores a la hora objetivo; se descartan las primeras 168 horas de cada estación. |
+| Baseline | Media histórica de la estación para el mismo día de semana y hora, con alternativas históricas cuando falta suficiente información. |
+| Modelo candidato | `RandomForestRegressor` con `n_estimators=100`, `min_samples_leaf=20`, `max_samples=0.3` y `random_state=42`. |
+| Evaluación | **MAE**, **RMSE** y **MAE en horas pico**, calculados en validación y prueba. |
 
-### 2.1 Partición y prevención de fuga temporal
+### 2.1 Partición cronológica
 
 | Conjunto | Periodo |
 |---|---|
-| Entrenamiento | Octubre de 2025 – mayo de 2026 |
-| Validación | Junio – julio de 2026 |
-| Prueba | Agosto – septiembre de 2026 |
+| Entrenamiento | Octubre 2025 – mayo 2026 |
+| Validación | Junio – julio 2026 |
+| Prueba | Agosto – septiembre 2026 |
 
-`dividir_temporal_p1()` realiza la división con base en la hora objetivo, sin partición aleatoria. Las estadísticas históricas se construyen de manera causal; pueden utilizar observaciones anteriores a la frontera de un conjunto para generar rezagos, pero nunca horas futuras respecto del instante predicho.
-
-MAE expresa el error promedio en viajes por estación-hora y RMSE penaliza errores grandes. El MAE en horas pico permite analizar el desempeño en periodos de mayor presión operativa. El script `train_p1.py` registra dos ejecuciones, `P1-baseline-media-historica` y `P1-random-forest`, además de gráficas de demanda real frente a predicha e importancia de características. **Las métricas numéricas finales deben extraerse de las ejecuciones verificadas de MLflow; no se deducen del código.**
+`dividir_temporal_p1()` establece los cortes cronológicos. Los rezagos pueden recurrir al pasado anterior a la frontera de un conjunto sin utilizar datos posteriores al momento de predicción. El código registra en MLflow los runs de media histórica y Random Forest, así como artefactos de desempeño. **Los valores numéricos de MAE/RMSE deberán tomarse de los runs verificados; no se infieren del script.**
 
 ## 3. P2 — Clasificación de riesgo indirecto de desbalance
 
-**Pregunta:** ¿una estación podría registrar un flujo neto desbalanceado durante la próxima hora?  
+**Pregunta:** ¿una estación registrará un nivel alto de presión de desbalance durante la siguiente hora?  
 **Granularidad:** estación-hora. **Horizonte:** una hora.  
-**Definición:** estrategia establecida en el ML Canvas; el resultado es un **indicador proxy**, no una medición real de bicicletas o espacios disponibles.
-
-| Etapa | Diseño acordado |
-|---|---|
-| Agregación | Contar salidas por hora de `inicio` y llegadas por hora de `fin` para cada estación; representar las horas sin movimientos. |
-| Objetivo | Etiqueta de riesgo basada en la magnitud o dirección del flujo neto de la hora siguiente, normalizada por capacidad cuando ésta sea válida. La fórmula y el umbral operativos deberán coincidir con el código final. |
-| Características | Hora y día, llegadas y salidas históricas, balances rezagados, agregaciones temporales y capacidad cuando sea aplicable. |
-| Baseline | Frecuencia histórica de la clase de riesgo por estación y franja horaria, sin utilizar información posterior al momento de predicción. |
-| Candidato | `RandomForestClassifier`, con semilla y configuración registradas. |
-| Evaluación | **Recall**, **precision**, **F1-score**, matriz de confusión y prevalencia de la clase de riesgo; comparar con el baseline en conjuntos temporales. |
-
-El **recall** permite medir cuántos episodios identificados por el indicador se detectan; la **precision** cuantifica las alertas correctas dentro de ese mismo indicador; y **F1** resume su equilibrio. Es importante no interpretar estas métricas como desempeño demostrado para estaciones realmente vacías o llenas, porque los CSV de viajes no incluyen series históricas del inventario de bicicletas.
-
-La estrategia temporal prevista es la misma que en P1: entrenamiento (octubre 2025–mayo 2026), validación (junio–julio) y prueba (agosto–septiembre). **Los flujos de la hora futura se reservan para construir la etiqueta y nunca forman parte de las características de entrada.** El umbral de clasificación debe elegirse con validación, no con prueba. La capacidad del catálogo de septiembre de 2026 no se debe asumir automáticamente válida para todos los meses.
-
-## 4. P3 — Clustering de estaciones
-
-**Pregunta:** ¿qué estaciones presentan patrones históricos de uso similares?  
-**Granularidad:** una fila por estación. **Horizonte predictivo:** no aplica.  
-**Implementación:** `mibici/feature_engineering/clustering.py`, `mibici/features.py` y `mibici/train_p3.py`.
+**Módulos:** `mibici/feature_engineering/classification.py` y `mibici/train_p2.py`.
 
 | Etapa | Implementación |
 |---|---|
-| Agregación | Agrupa los viajes por estación de origen y destino; calcula salidas, llegadas, balance, fines de semana y distribución de salidas por hora. |
-| Filtrado | Excluye estaciones con menos de **100 salidas** en el periodo analizado: se utilizaron **470 estaciones**. |
-| Características iniciales | `viajes_diarios`, `balance_relativo`, `proporcion_fin_semana`, `manana`, `mediodia`, `tarde`, `noche`. |
-| Transformación | Aplica `log1p` a `viajes_diarios`, elimina la franja `noche` por redundancia y estandariza las **seis** características restantes con `StandardScaler`. |
-| Baseline | Tres niveles de demanda mediante terciles de `viajes_diarios`. |
+| Agregación | Calcula salidas por hora de `inicio` y llegadas por hora de `fin`, por estación. Completa horas sin movimientos desde la primera actividad de cada estación. |
+| Catálogo | Incorpora la capacidad `dpcapacity` desde la nomenclatura de septiembre de 2026; excluye estaciones sin capacidad positiva conocida. |
+| Presión observada | `presion_desbalance = abs(llegadas - salidas) / capacidad`. |
+| Etiqueta | Riesgo alto si la presión observada de la hora objetivo es **mayor o igual al percentil 90** de presión calculado exclusivamente con entrenamiento. |
+| Características | **13 variables:** hora, día de semana, fin de semana, capacidad; rezagos de 1 hora de salidas, llegadas y flujo neto; presión en rezagos 1, 2, 24 y 168 horas; promedios históricos de presión de 24 y 168 horas. |
+| Prevención de fuga | Todos los rezagos y promedios se construyen con datos pasados; se excluyen las primeras **168 horas** por estación. El umbral de la etiqueta se calcula solo sobre entrenamiento. |
+| Baseline | **Persistencia de presión:** predice riesgo cuando `presion_lag_1` supera el umbral aprendido en entrenamiento. |
+| Modelo candidato | `RandomForestClassifier` optimizado: **150 árboles**, profundidad máxima **30**, `min_samples_leaf=10`, `max_samples=0.3`, `max_features=0.8`, `class_weight="balanced_subsample"` y semilla **42**. |
+| Evaluación | **Precision, recall, F1 y PR-AUC** en validación y prueba, además de matrices de confusión. |
+
+### 3.1 Evaluación y control temporal
+
+P2 utiliza la misma partición cronológica de P1: entrenamiento octubre de 2025–mayo de 2026, validación junio–julio y prueba agosto–septiembre. El entrenamiento de Random Forest se limita a **250,000 filas muestreadas** si el conjunto supera ese tamaño. El umbral de clasificación de probabilidades del Random Forest es **0.5**.
+
+La función `crear_features_p2()` conserva separadas las variables pasadas de la presión observada en la hora objetivo, usada para construir la etiqueta. Las métricas miden la detección del **indicador proxy**, no la disponibilidad real de bicicletas: los CSV no contienen inventarios históricos. Además, la capacidad del catálogo de septiembre de 2026 se utiliza como referencia y podría no coincidir con capacidades anteriores.
+
+El script `train_p2.py` registra `P2-baseline-persistencia` y `P2-random-forest-optimizado` en MLflow, con métricas para validación/prueba y un artefacto de matriz de confusión por run. El código consigna un proceso de selección de hiperparámetros de 72 combinaciones y cinco finalistas; su detalle experimental se documenta por separado.
+
+## 4. P3 — Clustering de estaciones
+
+**Pregunta:** ¿qué estaciones tienen patrones históricos de uso semejantes?  
+**Granularidad:** una fila por estación. **Horizonte:** no aplica.  
+**Módulos:** `mibici/feature_engineering/clustering.py`, `mibici/features.py` y `mibici/train_p3.py`.
+
+| Etapa | Implementación |
+|---|---|
+| Agregación | Calcula salidas, llegadas, demanda promedio, balance relativo, fines de semana y distribución horaria de cada estación. |
+| Filtrado | Excluye estaciones con menos de **100 salidas**: se utilizan **470 estaciones**. |
+| Características iniciales | `viajes_diarios`, `balance_relativo`, `proporcion_fin_semana`, `manana`, `mediodia`, `tarde` y `noche`. |
+| Transformación | Aplica `log1p` a `viajes_diarios`, elimina `noche` por redundancia y estandariza las **seis** características restantes con `StandardScaler`. |
+| Baseline | Terciles de demanda diaria, con tres grupos. |
 | Candidato | `KMeans(n_clusters=3, random_state=42, n_init=10)`. |
-| Evaluación | Silhouette Score sobre la **misma matriz de seis características estandarizadas** para ambos métodos; interpretación de perfiles y tamaños de grupo. |
-| Visualización | Proyección PCA a dos dimensiones para representar los clusters; es una herramienta visual posterior al entrenamiento, no una entrada a K-Means. |
+| Evaluación | Silhouette Score calculado sobre la **misma matriz escalada** para ambos métodos; tamaños de grupos y perfiles promedio. |
+| Visualización | PCA de dos componentes aplicado únicamente para visualizar los clusters ya calculados. |
 
-### 4.1 Resultados obtenidos
+### 4.1 Resultados registrados
 
-| Método | Estaciones | Silhouette Score |
+| Modelo | Estaciones | Silhouette Score |
 |---|---:|---:|
-| Terciles de demanda | 470 | **0.0732** |
+| Baseline — terciles de demanda | 470 | 0.0732 |
 | K-Means (k=3) | 470 | **0.1992** |
 
-K-Means distingue tres perfiles: **cluster 0 (154 estaciones)**, menor demanda y mayor proporción matutina; **cluster 1 (198)**, demanda más elevada con actividad al mediodía y la tarde; y **cluster 2 (118)**, demanda intermedia-baja, más actividad vespertina y balance relativo negativo. La representación PCA en dos dimensiones conserva aproximadamente **56.3 % de la varianza** de las características escaladas.
+Los tres grupos de K-Means contienen **154, 198 y 118 estaciones**, respectivamente. El PCA de dos dimensiones explica aproximadamente **56.3 %** de la varianza de las características escaladas. El valor de Silhouette mejoró respecto al baseline, aunque persiste superposición entre grupos.
 
-La mejora de Silhouette indica una separación relativa mayor que la del baseline, pero no equivale a precisión predictiva ni demuestra utilidad operativa definitiva. El balance de viajes no representa por sí mismo el inventario real de bicicletas.
+### 4.2 Alcance temporal y limitaciones
 
-### 4.2 Alcance temporal
+P3 utiliza todo el periodo histórico para describir perfiles de estaciones, no una partición de entrenamiento/prueba supervisada. **No se ha evaluado la estabilidad de los clusters en meses posteriores.** La demanda diaria utiliza los días presentes en el conjunto global, lo que puede subestimar la actividad de estaciones incorporadas durante el año. Ningún balance de flujos equivale directamente al inventario de bicicletas disponible.
 
-P3 utiliza el periodo completo de octubre de 2025 a septiembre de 2026 para construir perfiles históricos y comparar los métodos. No aplica la partición supervisada de P1. Como validación adicional de robustez se recomienda comparar perfiles y asignaciones entre periodos, considerando estaciones nuevas o de cobertura incompleta; **esta estabilidad temporal no forma parte de los resultados reportados**. El promedio diario se calcula usando los días presentes en el periodo analizado y puede subestimar la intensidad de estaciones activas solo durante una parte del año.
+## 5. Ejecución reproducible y registro en MLflow
 
-## 5. Ejecución, MLflow y trazabilidad
+Las transformaciones de P1 y P3 están disponibles en funciones reutilizables desde `mibici/features.py`; P2 mantiene su ingeniería de características en `mibici/feature_engineering/classification.py`. La ejecución definitiva se realiza desde scripts, no desde notebooks.
 
-Las transformaciones de P1 y P3 están implementadas en funciones reutilizables con docstrings y expuestas desde `mibici/features.py`. Los notebooks se reservan para exploración y análisis, mientras que los scripts del módulo ejecutan los experimentos.
-
-Desde la raíz del repositorio, después de instalar `requirements.txt` y ejecutar la ingesta:
+Desde la raíz del proyecto, una vez instaladas las dependencias y preparados los doce Parquet:
 
 ```powershell
 python -m mibici.train_p1
+python -m mibici.train_p2
 python -m mibici.train_p3
-# Coordinador: ejecuta los modelos habilitados
+
+# Ejecución conjunta de los tres pipelines:
 python -m mibici.run_all
-```
 
-En la versión de `run_all.py` revisada están habilitados **P1 y P3**; P2 se activará al integrar y comprobar su módulo de entrenamiento. Los scripts usan el experimento `mibici-equipo31` y una base local SQLite para MLflow, consultable con:
-
-```powershell
+# Interfaz de experimentos:
 mlflow ui --backend-store-uri "sqlite:///mlflow.db"
 ```
 
-Los runs deben registrar el intervalo temporal, versión de datos, semilla, modelo y sus hiperparámetros; métricas con referencia al conjunto de evaluación cuando corresponda (`val_mae`, `test_rmse`, `train_silhouette_score`); etiquetas `equipo`, `pregunta` y `git_commit`; y al menos un artefacto gráfico. Las etiquetas `git_commit` corresponden al `HEAD` en el momento de ejecutar el script, por lo que la evidencia definitiva debe generarse después de integrar y guardar el código final.
+`run_all.py` ejecuta **los tres pipelines habilitados**, tal como se confirmó en la prueba conjunta del equipo. Los experimentos comparten `mibici-equipo31` y un backend SQLite local. Los runs registran parámetros de reproducción, intervalo temporal, versión de datos, métricas correspondientes a cada pregunta, etiquetas `equipo`, `pregunta` y `git_commit` y artefactos gráficos.
 
-`mibici/config.py` concentra las rutas y parámetros globales de los experimentos, mientras que `.gitignore` evita versionar CSV/Parquet, `mlflow.db`, `mlruns/`, `mlartifacts/`, credenciales y modelos serializados. La instalación en un clon limpio y el manifiesto versionado de integridad por archivo son verificaciones transversales necesarias para cerrar la reproducibilidad integral del proyecto.
+Las versiones directas de las dependencias se fijan en `requirements.txt`; `.gitignore` excluye datos locales, `mlflow.db`, `mlruns/`, `mlartifacts/`, archivos `.env` y modelos serializados. El manifiesto de integridad con hashes individuales y conteos debe verificarse tras su incorporación al repositorio.
 
-## 6. Alcance y decisiones del sistema
+## 6. Justificación y decisiones técnicas
 
-- **Una ingesta, tres preguntas:** evita duplicar reglas de limpieza y mantiene un conjunto de datos común.
-- **Procesamiento batch:** es adecuado para los CSV mensuales de MiBici y la evaluación académica; no presupone una API o servicio en producción.
-- **Separación entre exploración y entrenamiento:** los notebooks explican el análisis, pero la ejecución reproducible se realiza desde scripts del módulo.
-- **Prevención de fugas:** P1 y P2 deben utilizar únicamente información disponible antes de la hora objetivo; P3 analiza perfiles históricos sin afirmar capacidad predictiva.
-- **Trazabilidad dual:** Git identifica la versión del código y MLflow conserva parámetros, métricas, etiquetas y artefactos. El manifiesto por archivo complementará la identificación verificable de los datos.
+- **Ingesta única, tres pipelines independientes:** reduce repetición de limpieza, facilita pruebas y permite comparar métodos específicos por pregunta.
+- **Procesamiento por lotes y Parquet:** adecuado para CSV mensuales y millones de registros sin introducir servicios de producción innecesarios.
+- **Variables históricas causales:** en P1/P2 los rezagos evitan utilizar movimientos ocurridos después de la hora objetivo; los umbrales de P2 se calculan exclusivamente con entrenamiento.
+- **Separación de notebooks y scripts:** los notebooks documentan exploración, mientras que el módulo `mibici` contiene la lógica reutilizable y ejecutable.
+- **Trazabilidad complementaria:** Git identifica el código; SHA-256 identifica el contenido de los datos utilizados; MLflow conserva parámetros, métricas y artefactos.
 
-## 7. Referencias y documentos relacionados
+## 7. Referencias y documentación relacionada
 
 - MiBici. (s. f.). *Datos abiertos*. https://www.mibici.net/es/datos-abiertos/
 - MLflow. (s. f.). *MLflow Tracking*. https://mlflow.org/docs/latest/ml/tracking/
-- scikit-learn developers. (s. f.). *Metrics and scoring*. https://scikit-learn.org/stable/modules/model_evaluation.html
+- scikit-learn developers. (s. f.). *Metrics and scoring: Quantifying the quality of predictions*. https://scikit-learn.org/stable/modules/model_evaluation.html
 - scikit-learn developers. (s. f.). *Clustering*. https://scikit-learn.org/stable/modules/clustering.html
-- Documentos del equipo: `references/definicion_datos.md`, `references/modelos_metricas.md`, `references/arquitectura_sistema.md`, `references/limpieza_datos.md`.
+
+**Documentos relacionados:** `references/arquitectura_sistema.md`, `references/definicion_datos.md`, `references/limpieza_datos.md` y `references/modelos_metricas.md`.

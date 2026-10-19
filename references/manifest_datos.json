@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "fuente": "MiBici - datos abiertos",
+  "periodo": "2025-10/2026-09",
+  "total_archivos": 12,
+  "total_filas": 4497119,
+  "archivos": [
+    {
+      "archivo": "data/processed/datos_abiertos_2025_10.parquet",
+      "filas": 420064,
+      "tamano_bytes": 8633441,
+      "sha256": "e9a1f7db944dcfa761e5db988b4b2d26f2a6d974fe0d5717f733a52512a8e657"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2025_11.parquet",
+      "filas": 380328,
+      "tamano_bytes": 7921135,
+      "sha256": "ffe7c7442e9292f09462327a2046312825e56c1d1cf1313004ed659ff9471645"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2025_12.parquet",
+      "filas": 335420,
+      "tamano_bytes": 7137716,
+      "sha256": "c755503a235b827a2be319714a45642a0677590475eeee2a06b7518d8dbd543c"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_01.parquet",
+      "filas": 357180,
+      "tamano_bytes": 7517525,
+      "sha256": "6e2cef78f3f2fcbd275d72ad37c0207fe665b94a1d0890757c0d4ab213cbca94"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_02.parquet",
+      "filas": 333756,
+      "tamano_bytes": 7063214,
+      "sha256": "3411e3806c7afef52e89fa5f7a9bcb55e2d6e72666c6213daa04d9f460a3bea0"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_03.parquet",
+      "filas": 376243,
+      "tamano_bytes": 7867176,
+      "sha256": "6e736006d1598604de4487376b63dfd46c88d43ae76b442409feeebdf2048275"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_04.parquet",
+      "filas": 351851,
+      "tamano_bytes": 7431036,
+      "sha256": "4afe1499f99bf33d3747cac2cfed569dfa982439916fc3394466d197257e724f"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_05.parquet",
+      "filas": 315895,
+      "tamano_bytes": 6806625,
+      "sha256": "4b9906527feb325baa81cd350904914960936c6875ba47e82577786a926bd694"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_06.parquet",
+      "filas": 355303,
+      "tamano_bytes": 7499764,
+      "sha256": "a44247a1bdd04fdf1f958147a4df4c4312aea15308f6389ce8179d9ba6e6f934"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_07.parquet",
+      "filas": 388257,
+      "tamano_bytes": 8087551,
+      "sha256": "1d37a2a2c5031c2eb356e80c00e973bf66453c8ec4e94da8b8af35c919bbcd59"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_08.parquet",
+      "filas": 393524,
+      "tamano_bytes": 8173522,
+      "sha256": "0a01ac941a137b9e9003f007d5a7fbde780b5803211ea4a78ece6a6c64fa13ca"
+    },
+    {
+      "archivo": "data/processed/datos_abiertos_2026_09.parquet",
+      "filas": 489298,
+      "tamano_bytes": 9777824,
+      "sha256": "ca1caaeb6572900098e75be07db6860060cf3407de4f4d13466e4731dffe9c03"
+    }
+  ]
+}
