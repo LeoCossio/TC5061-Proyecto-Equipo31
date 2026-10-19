@@ -31,7 +31,7 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 # Habilitar P1 y P2 SOLO después de probarlos por separado.
 EXPERIMENTS = [
     ("P1 - Regresión", "mibici.train_p1", True),
-    ("P2 - Clasificación", "mibici.train_p2", False),  # TODO: activar
+    ("P2 - Clasificación", "mibici.train_p2", True),
     ("P3 - Clustering", "mibici.train_p3", True),
 ]
 
