@@ -4,6 +4,13 @@ from loguru import logger
 from tqdm import tqdm
 import typer
 
+from mibici.feature_engineering.clustering import (
+    crear_features_p3,
+    preprocesar_features_p3,
+    baseline_p3,
+    entrenar_kmeans_p3,
+)
+
 from mibici.config import PROCESSED_DATA_DIR
 
 app = typer.Typer()
