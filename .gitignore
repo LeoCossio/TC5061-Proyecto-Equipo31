@@ -194,6 +194,7 @@ cython_debug/
 mlruns/
 mlartifacts/
 mlflow.db
+mlflow.db-*
 
 # Modelos entrenados
 /models/
@@ -206,11 +207,6 @@ mlflow.db
 # Variables de entorno adicionales
 .env.*
 !.env.example
-
-# MLflow
-mlruns/
-mlartifacts/
-mlflow.db
 
 # Modelos serializados
 *.pkl

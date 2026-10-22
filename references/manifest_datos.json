@@ -9,73 +9,73 @@
       "archivo": "data/processed/datos_abiertos_2025_10.parquet",
       "filas": 420064,
       "tamano_bytes": 8633441,
-      "sha256": "e9a1f7db944dcfa761e5db988b4b2d26f2a6d974fe0d5717f733a52512a8e657"
+      "sha256": "024085a13a892fb42ec1e5ba90daad990f8b982f5b368fea30033db7dc51473b"
     },
     {
       "archivo": "data/processed/datos_abiertos_2025_11.parquet",
       "filas": 380328,
       "tamano_bytes": 7921135,
-      "sha256": "ffe7c7442e9292f09462327a2046312825e56c1d1cf1313004ed659ff9471645"
+      "sha256": "8079a0ec9560337870ccae592e2081867c7bbe1e0953386ec139df530e418e18"
     },
     {
       "archivo": "data/processed/datos_abiertos_2025_12.parquet",
       "filas": 335420,
       "tamano_bytes": 7137716,
-      "sha256": "c755503a235b827a2be319714a45642a0677590475eeee2a06b7518d8dbd543c"
+      "sha256": "bef11cb5536c84cf7a687df78c4478a424cf8f7185c9f2b44309c1bd65e6354e"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_01.parquet",
       "filas": 357180,
       "tamano_bytes": 7517525,
-      "sha256": "6e2cef78f3f2fcbd275d72ad37c0207fe665b94a1d0890757c0d4ab213cbca94"
+      "sha256": "ab264ebbe21356a182a910ba1cd31d72810559436dde571715dec47e5231e992"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_02.parquet",
       "filas": 333756,
       "tamano_bytes": 7063214,
-      "sha256": "3411e3806c7afef52e89fa5f7a9bcb55e2d6e72666c6213daa04d9f460a3bea0"
+      "sha256": "4164ccf441fe998fe9475472217478c9c42d7fe5f4e86eebd8cbac1407ce5dee"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_03.parquet",
       "filas": 376243,
       "tamano_bytes": 7867176,
-      "sha256": "6e736006d1598604de4487376b63dfd46c88d43ae76b442409feeebdf2048275"
+      "sha256": "28524bb6674c4b61d1f6ccc4c11077f1e7888b1913267b415382f38197dc8878"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_04.parquet",
       "filas": 351851,
       "tamano_bytes": 7431036,
-      "sha256": "4afe1499f99bf33d3747cac2cfed569dfa982439916fc3394466d197257e724f"
+      "sha256": "87252af201cde7a54ea3e7e9bc7418d22f88d9a96a2675aa28febe2cad9bccf9"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_05.parquet",
       "filas": 315895,
       "tamano_bytes": 6806625,
-      "sha256": "4b9906527feb325baa81cd350904914960936c6875ba47e82577786a926bd694"
+      "sha256": "8be24688738c1e567df2aba989e7e36622ad486156a748d62790b459d7906c53"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_06.parquet",
       "filas": 355303,
       "tamano_bytes": 7499764,
-      "sha256": "a44247a1bdd04fdf1f958147a4df4c4312aea15308f6389ce8179d9ba6e6f934"
+      "sha256": "2705bbcc5bb62dfbe57cc1fd06234b036abcf3573f2aa36a2e77fb13e41c2ae3"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_07.parquet",
       "filas": 388257,
       "tamano_bytes": 8087551,
-      "sha256": "1d37a2a2c5031c2eb356e80c00e973bf66453c8ec4e94da8b8af35c919bbcd59"
+      "sha256": "6a7f32c20569eb09ff7b47254fad97de3731ccce5c2a1805d2680a6fe88d6f0e"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_08.parquet",
       "filas": 393524,
       "tamano_bytes": 8173522,
-      "sha256": "0a01ac941a137b9e9003f007d5a7fbde780b5803211ea4a78ece6a6c64fa13ca"
+      "sha256": "5bca8118881f0e2e70d66a044dd6dda0b0e14c253f618b4eedb08144049a4574"
     },
     {
       "archivo": "data/processed/datos_abiertos_2026_09.parquet",
       "filas": 489298,
       "tamano_bytes": 9777824,
-      "sha256": "ca1caaeb6572900098e75be07db6860060cf3407de4f4d13466e4731dffe9c03"
+      "sha256": "3e10b713fb9874c8b74d091232732ec8dfbd2d2c3bc3b13c80b046ea9138168a"
     }
   ]
 }

@@ -26,6 +26,11 @@ from mibici.config import (
     MLFLOW_EXPERIMENT,
     PROCESSED_DATA_DIR,
     PROJ_ROOT,
+    P2_RF_N_ESTIMATORS,
+    P2_RF_MAX_DEPTH,
+    P2_RF_MIN_SAMPLES_LEAF,
+    P2_RF_MAX_SAMPLES,
+    P2_RF_MAX_FEATURES,
 )
 from mibici.feature_engineering.classification import (
     COLUMNAS_P2,
@@ -132,7 +137,14 @@ def guardar_confusion(reales, predicciones, nombre, titulo):
 # Entrenamiento principal
 # ---------------------------------------------------------
 
-def main():
+def main(
+    model="rf",
+    n_estimators=P2_RF_N_ESTIMATORS,
+    max_depth=P2_RF_MAX_DEPTH,
+    min_samples_leaf=P2_RF_MIN_SAMPLES_LEAF,
+    max_samples=P2_RF_MAX_SAMPLES,
+    max_features=P2_RF_MAX_FEATURES,
+):
 
     # 1. Verificar los archivos de datos.
     archivos = sorted(PROCESSED_DATA_DIR.glob("*.parquet"))
@@ -246,10 +258,6 @@ def main():
     ).strip()
 
     # 10. Configurar MLflow.
-    mlflow.set_tracking_uri(
-        f"sqlite:///{(PROJ_ROOT / 'mlflow.db').as_posix()}"
-    )
-
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
     parametros_comunes = {
@@ -278,177 +286,189 @@ def main():
     # =====================================================
     # 11. BASELINE
     # =====================================================
+    if model == "baseline":
+        print("P2: evaluando baseline...", flush=True)
 
-    print("P2: evaluando baseline...", flush=True)
+        pred_val_baseline = baseline_p2(
+            entrenamiento,
+            validacion,
+        )
 
-    pred_val_baseline = baseline_p2(
-        entrenamiento,
-        validacion,
-    )
+        pred_test_baseline = baseline_p2(
+            entrenamiento,
+            prueba,
+        )
 
-    pred_test_baseline = baseline_p2(
-        entrenamiento,
-        prueba,
-    )
+        metricas_baseline = {
+            **calcular_metricas(
+                "val",
+                validacion[OBJETIVO_P2],
+                pred_val_baseline,
+                validacion["presion_lag_1"],
+            ),
+            **calcular_metricas(
+                "test",
+                prueba[OBJETIVO_P2],
+                pred_test_baseline,
+                prueba["presion_lag_1"],
+            ),
+        }
 
-    metricas_baseline = {
-        **calcular_metricas(
-            "val",
-            validacion[OBJETIVO_P2],
-            pred_val_baseline,
-            validacion["presion_lag_1"],
-        ),
-        **calcular_metricas(
-            "test",
+        figura_baseline = guardar_confusion(
             prueba[OBJETIVO_P2],
             pred_test_baseline,
-            prueba["presion_lag_1"],
-        ),
-    }
+            "p2_baseline_confusion.png",
+            "P2 - Baseline de persistencia (prueba)",
+        )
 
-    figura_baseline = guardar_confusion(
-        prueba[OBJETIVO_P2],
-        pred_test_baseline,
-        "p2_baseline_confusion.png",
-        "P2 - Baseline de persistencia (prueba)",
-    )
+        with mlflow.start_run(
+            run_name="P2-baseline-persistencia"
+        ):
+            mlflow.log_params({
+                **parametros_comunes,
+                "modelo": "persistencia_presion",
+                "umbral_prediccion": umbral_riesgo,
+            })
 
-    with mlflow.start_run(
-        run_name="P2-baseline-persistencia"
-    ):
-        mlflow.log_params({
-            **parametros_comunes,
-            "modelo": "persistencia_presion",
-            "umbral_prediccion": umbral_riesgo,
-        })
+            mlflow.log_metrics(metricas_baseline)
+            mlflow.set_tags({
+                **etiquetas,
+                "question": "p2",
+                "model_family": "baseline",
+                "stage_of_work": "baseline",
+            })
+            mlflow.log_artifact(str(figura_baseline))
 
-        mlflow.log_metrics(metricas_baseline)
-        mlflow.set_tags(etiquetas)
-        mlflow.log_artifact(str(figura_baseline))
-
-    print("P2: baseline registrado en MLflow.", flush=True)
+        print("P2: baseline registrado en MLflow.", flush=True)
 
     # =====================================================
     # 12. RANDOM FOREST OPTIMIZADO
     # =====================================================
+    elif model == "rf":
+        print("P2: preparando muestra de entrenamiento...", flush=True)
 
-    print("P2: preparando muestra de entrenamiento...", flush=True)
+        if len(entrenamiento) > MAX_FILAS_ENTRENAMIENTO_RF:
+            muestra = entrenamiento.sample(
+                n=MAX_FILAS_ENTRENAMIENTO_RF,
+                random_state=SEMILLA,
+            )
+        else:
+            muestra = entrenamiento
 
-    if len(entrenamiento) > MAX_FILAS_ENTRENAMIENTO_RF:
-        muestra = entrenamiento.sample(
-            n=MAX_FILAS_ENTRENAMIENTO_RF,
-            random_state=SEMILLA,
+        print(
+            f"P2: entrenando Random Forest con "
+            f"{len(muestra):,} registros...",
+            flush=True,
         )
-    else:
-        muestra = entrenamiento
 
-    print(
-        f"P2: entrenando Random Forest con "
-        f"{len(muestra):,} registros...",
-        flush=True,
-    )
+        modelo = entrenar_random_forest_p2(
+            muestra,
+            semilla=SEMILLA,
+            n_estimators=n_estimators,
+            min_samples_leaf=min_samples_leaf,
+            max_samples=max_samples,
+            max_depth=max_depth,
+            max_features=max_features,
+        )
 
-    modelo = entrenar_random_forest_p2(
-        muestra,
-        semilla=SEMILLA,
-        n_estimators=RF_N_ESTIMATORS,
-        min_samples_leaf=RF_MIN_SAMPLES_LEAF,
-        max_samples=RF_MAX_SAMPLES,
-        max_depth=RF_MAX_DEPTH,
-        max_features=RF_MAX_FEATURES,
-    )
+        # 13. Obtener probabilidades.
+        print("P2: evaluando Random Forest...", flush=True)
 
-    # 13. Obtener probabilidades.
-    print("P2: evaluando Random Forest...", flush=True)
+        prob_val = modelo.predict_proba(
+            validacion[COLUMNAS_P2]
+        )[:, 1]
 
-    prob_val = modelo.predict_proba(
-        validacion[COLUMNAS_P2]
-    )[:, 1]
+        prob_test = modelo.predict_proba(
+            prueba[COLUMNAS_P2]
+        )[:, 1]
 
-    prob_test = modelo.predict_proba(
-        prueba[COLUMNAS_P2]
-    )[:, 1]
+        # 14. Aplicar el umbral fijo de clasificación.
+        pred_val_rf = (
+            prob_val >= UMBRAL_PREDICCION
+        ).astype("int8")
 
-    # 14. Aplicar el umbral fijo de clasificación.
-    pred_val_rf = (
-        prob_val >= UMBRAL_PREDICCION
-    ).astype("int8")
+        pred_test_rf = (
+            prob_test >= UMBRAL_PREDICCION
+        ).astype("int8")
 
-    pred_test_rf = (
-        prob_test >= UMBRAL_PREDICCION
-    ).astype("int8")
+        # 15. Calcular métricas.
+        metricas_rf = {
+            **calcular_metricas(
+                "val",
+                validacion[OBJETIVO_P2],
+                pred_val_rf,
+                prob_val,
+            ),
+            **calcular_metricas(
+                "test",
+                prueba[OBJETIVO_P2],
+                pred_test_rf,
+                prob_test,
+            ),
+        }
 
-    # 15. Calcular métricas.
-    metricas_rf = {
-        **calcular_metricas(
-            "val",
-            validacion[OBJETIVO_P2],
-            pred_val_rf,
-            prob_val,
-        ),
-        **calcular_metricas(
-            "test",
+        # 16. Guardar gráfica.
+        figura_rf = guardar_confusion(
             prueba[OBJETIVO_P2],
             pred_test_rf,
-            prob_test,
-        ),
-    }
+            "p2_rf_optimizado_confusion.png",
+            "P2 - Random Forest optimizado (prueba)",
+        )
 
-    # 16. Guardar gráfica.
-    figura_rf = guardar_confusion(
-        prueba[OBJETIVO_P2],
-        pred_test_rf,
-        "p2_rf_optimizado_confusion.png",
-        "P2 - Random Forest optimizado (prueba)",
-    )
+        # 17. Registrar experimento optimizado.
+        with mlflow.start_run(
+            run_name="P2-random-forest-optimizado"
+        ):
+            mlflow.log_params({
+                **parametros_comunes,
+                "modelo": "RandomForestClassifier",
+                "n_estimators": n_estimators,
+                "max_depth": max_depth,
+                "min_samples_leaf": min_samples_leaf,
+                "max_samples": max_samples,
+                "max_features": max_features,
+                "class_weight": "balanced_subsample",
+                "n_jobs": 2,
+                "filas_entrenamiento_rf": len(muestra),
+                "umbral_prediccion": UMBRAL_PREDICCION,
+                "metodo_seleccion": (
+                    "grid_72_combinaciones_5_finalistas"
+                ),
+            })
 
-    # 17. Registrar experimento optimizado.
-    with mlflow.start_run(
-        run_name="P2-random-forest-optimizado"
-    ):
-        mlflow.log_params({
-            **parametros_comunes,
-            "modelo": "RandomForestClassifier",
-            "n_estimators": RF_N_ESTIMATORS,
-            "max_depth": RF_MAX_DEPTH,
-            "min_samples_leaf": RF_MIN_SAMPLES_LEAF,
-            "max_samples": RF_MAX_SAMPLES,
-            "max_features": RF_MAX_FEATURES,
-            "class_weight": "balanced_subsample",
-            "n_jobs": 2,
-            "filas_entrenamiento_rf": len(muestra),
-            "umbral_prediccion": UMBRAL_PREDICCION,
-            "metodo_seleccion": (
-                "grid_72_combinaciones_5_finalistas"
-            ),
-        })
+            mlflow.log_metrics(metricas_rf)
+            mlflow.set_tags({
+                **etiquetas,
+                "question": "p2",
+                "model_family": "random_forest_classifier",
+                "stage_of_work": "candidate",
+            })
+            mlflow.log_artifact(str(figura_rf))
 
-        mlflow.log_metrics(metricas_rf)
-        mlflow.set_tags(etiquetas)
-        mlflow.log_artifact(str(figura_rf))
+    else:
+        raise ValueError(f"Modelo no soportado para P2: {model}")
 
     # =====================================================
     # 18. RESULTADOS
     # =====================================================
-
+    
     print("\n" + "=" * 55)
-    print("RESULTADOS FINALES P2")
+    print(f"RESULTADOS P2 - {model.upper()}")
     print("=" * 55)
 
     print(f"Umbral de presión: {umbral_riesgo:.4f}")
-    print(f"Registros utilizados por RF: {len(muestra):,}")
 
-    print("\nBASELINE")
-    for nombre, valor in metricas_baseline.items():
+    if model == "baseline":
+        metricas = metricas_baseline
+    else:
+        metricas = metricas_rf
+        print(f"Registros utilizados por RF: {len(muestra):,}")
+
+    for nombre, valor in metricas.items():
         print(f"  {nombre}: {valor:.4f}")
 
-    print("\nRANDOM FOREST OPTIMIZADO")
-    for nombre, valor in metricas_rf.items():
-        print(f"  {nombre}: {valor:.4f}")
-
-    print("\nDos runs de P2 registrados en MLflow.")
+    print(f"\nModelo {model} registrado en MLflow")
     print("Experimento:", MLFLOW_EXPERIMENT)
-    print("=" * 55)
 
 
 if __name__ == "__main__":
