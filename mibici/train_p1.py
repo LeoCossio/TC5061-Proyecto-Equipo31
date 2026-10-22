@@ -212,7 +212,8 @@ def main(
 
         figura_importancias = guardar_grafica_importancias(modelo)
 
-        with mlflow.start_run(run_name=f"P1-rfr-n{n_estimators}"):
+        with mlflow.start_run(run_name="...") as run:
+            print(f"MLflow Run ID: {run.info.run_id}")
             mlflow.log_params({
                 **parametros_comunes,
                 "modelo": "RandomForestRegressor",

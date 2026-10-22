@@ -416,9 +416,8 @@ def main(
         )
 
         # 17. Registrar experimento optimizado.
-        with mlflow.start_run(
-            run_name="P2-random-forest-optimizado"
-        ):
+        with mlflow.start_run(run_name="...") as run:
+            print(f"MLflow Run ID: {run.info.run_id}")
             mlflow.log_params({
                 **parametros_comunes,
                 "modelo": "RandomForestClassifier",
