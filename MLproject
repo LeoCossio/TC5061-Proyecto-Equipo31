@@ -1,0 +1,14 @@
+name: mibici-equipo31
+
+python_env: python_env.yaml
+
+entry_points:
+  ingest:
+    command: "python -m mibici.dataset && python scripts/data_manifest.py generate"
+
+  train:
+    parameters:
+      question: {type: string}
+      model: {type: string}
+
+    command: "python -m mibici.project_train --question {question} --model {model}"

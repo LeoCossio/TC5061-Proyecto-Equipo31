@@ -15,6 +15,8 @@ Este proyecto analiza los datos abiertos del sistema de bicicletas públicas **M
 
 **Estado:** los pipelines de **P1, P2 y P3 están implementados**, y el equipo ha comprobado la ejecución conjunta con `python -m mibici.run_all`. La verificación del manifiesto versionado de integridad de datos y la reproducción desde un clon limpio deben documentarse por separado cuando estén concluidas.
 
+# Parte 1
+
 ## 1. Preguntas y modelos
 
 | Pregunta | Tipo | Unidad / horizonte | Baseline | Modelo candidato | Evaluación |
@@ -191,3 +193,32 @@ Las contribuciones definitivas y las revisiones se acreditan mediante el histori
 - [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow)
 - [GitHub — Ramas protegidas](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 - [Conventional Commits](https://www.conventionalcommits.org/es/v1.0.0/)
+
+
+# Parte 2
+
+### MLflow Tracking Server
+
+El proyecto utiliza un servidor local de MLflow con SQLite como backend para el seguimiento de experimentos y la gestión de modelos mediante Model Registry.
+
+**1. Iniciar el servidor desde la raíz del repositorio:**
+
+```powershell
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+```
+
+**2. Configurar la conexión en una segunda terminal PowerShell:**
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+```
+
+**3. Acceder a la interfaz web:**
+
+http://127.0.0.1:5000
+
+Los experimentos se registrarán bajo el nombre `mibici-equipo31`.
+
+La base de datos `mlflow.db` y los directorios de artefactos locales están excluidos del control de versiones mediante `.gitignore`.
+
+**Nota:** El servidor debe permanecer activo durante las ejecuciones. La configuración de `MLFLOW_TRACKING_URI` debe realizarse en cada nueva sesión de PowerShell.
