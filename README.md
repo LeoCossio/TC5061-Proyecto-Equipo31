@@ -222,3 +222,187 @@ Los experimentos se registrarán bajo el nombre `mibici-equipo31`.
 La base de datos `mlflow.db` y los directorios de artefactos locales están excluidos del control de versiones mediante `.gitignore`.
 
 **Nota:** El servidor debe permanecer activo durante las ejecuciones. La configuración de `MLFLOW_TRACKING_URI` debe realizarse en cada nueva sesión de PowerShell.
+
+## 4. Instalación y reproducción del entorno
+
+El proyecto está desarrollado en **Python 3.13.7** y utiliza MLflow Projects para ejecutar los pipelines de manera reproducible.
+
+Las dependencias se encuentran declaradas en `requirements.txt` y `python_env.yaml`. Para la creación del entorno aislado se recomienda utilizar **uv**, ya que su funcionamiento fue comprobado en Windows durante las pruebas de reproducibilidad.
+
+### 4.1. Requisitos previos
+
+- Python 3.13.
+- Git.
+- MLflow y uv.
+- Conexión a Internet para descargar dependencias y datos de MiBici.
+
+Instalar las herramientas necesarias:
+
+```powershell
+python -m pip install mlflow uv
+```
+
+Verificar la instalación:
+
+```powershell
+mlflow --version
+uv --version
+```
+
+### 4.2. Clonar el repositorio
+
+```powershell
+git clone https://github.com/LeoCossio/TC5061-Proyecto-Equipo31.git
+cd TC5061-Proyecto-Equipo31
+```
+
+Los comandos siguientes deben ejecutarse desde la raíz del repositorio.
+
+### 4.3. Gestión del entorno con uv
+
+El archivo `MLproject` declara el entorno definido en `python_env.yaml`, que especifica la versión de Python y las dependencias necesarias para ejecutar los modelos.
+
+Para utilizar dicho entorno, los comandos de MLflow incluyen:
+
+```text
+--env-manager uv
+```
+
+MLflow utiliza uv para preparar un entorno aislado e instalar las dependencias. No es necesario instalar manualmente `requirements.txt` para los entrenamientos ejecutados mediante este mecanismo.
+
+Se recomienda utilizar `uv` en Windows porque la ejecución con `--env-manager virtualenv` presentó dificultades con la detección de `pyenv`.
+
+También es posible utilizar `--env-manager local` si ya existe un entorno configurado, aunque esta opción no proporciona el mismo aislamiento.
+
+## 5. Ejecución reproducible mediante MLflow
+
+### 5.1. Iniciar el servidor de Tracking
+
+El proyecto utiliza MLflow Tracking con una base de datos SQLite para almacenar experimentos y gestionar el Model Registry.
+
+Desde una primera terminal PowerShell, ubicada en la raíz del repositorio, ejecutar:
+
+```powershell
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+```
+
+El servidor debe permanecer activo durante la ejecución de los experimentos.
+
+La interfaz web estará disponible en:
+
+http://127.0.0.1:5000
+
+La base de datos `mlflow.db` se crea localmente y está excluida del control de versiones.
+
+### 5.2. Configurar la conexión al servidor
+
+Abrir una segunda terminal PowerShell en la raíz del repositorio.
+
+Ejecutar:
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+```
+
+Esta variable permite que los entrenamientos registren sus resultados en el servidor local.
+
+La configuración debe repetirse en cada nueva sesión de PowerShell.
+
+### 5.3. Ingesta y preparación de datos
+
+Los datos originales de MiBici no se incluyen en el repositorio.
+
+Por tanto, antes de entrenar es necesario ejecutar la ingesta:
+
+```powershell
+mlflow run . -e ingest --env-manager uv --experiment-name mibici-equipo31
+```
+
+Este proceso:
+
+1. Descarga los archivos históricos de MiBici.
+2. Realiza limpieza y normalización de los registros.
+3. Genera los 12 archivos Parquet en `data/processed/`.
+4. Genera el manifiesto `references/manifest_datos.json` con información de integridad y hashes SHA-256.
+
+El conjunto procesado de referencia contiene **4,497,119 viajes** correspondientes al periodo octubre de 2025 a septiembre de 2026.
+
+### 5.4. Entrenar P1 — Regresión de demanda
+
+Random Forest Regressor:
+
+```powershell
+mlflow run . -e train -P question=p1 -P model=rfr --env-manager uv --experiment-name mibici-equipo31
+```
+
+Baseline de media histórica:
+
+```powershell
+mlflow run . -e train -P question=p1 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+```
+
+Para probar una configuración personalizada:
+
+```powershell
+mlflow run . -e train -P question=p1 -P model=rfr -P n_estimators=100 -P min_samples_leaf=20 -P max_samples=0.3 --env-manager uv --experiment-name mibici-equipo31
+```
+
+### 5.5. Entrenar P2 — Clasificación de riesgo
+
+Random Forest Classifier:
+
+```powershell
+mlflow run . -e train -P question=p2 -P model=rf --env-manager uv --experiment-name mibici-equipo31
+```
+
+Baseline de persistencia:
+
+```powershell
+mlflow run . -e train -P question=p2 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+```
+
+Los parámetros configurables incluyen `p2_n_estimators`, `max_depth`, `p2_min_samples_leaf`, `p2_max_samples` y `max_features`.
+
+### 5.6. Entrenar P3 — Clustering de estaciones
+
+K-Means:
+
+```powershell
+mlflow run . -e train -P question=p3 -P model=kmeans -P n_clusters=3 --env-manager uv --experiment-name mibici-equipo31
+```
+
+Baseline de terciles de demanda:
+
+```powershell
+mlflow run . -e train -P question=p3 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+```
+
+Para evaluar otra cantidad de grupos, puede modificarse el parámetro `n_clusters`.
+
+### 5.7. Consultar los experimentos
+
+Acceder a http://127.0.0.1:5000 y seleccionar el experimento `mibici-equipo31`.
+
+Desde la interfaz de MLflow es posible consultar las corridas, métricas, parámetros y artefactos registrados.
+
+Los modelos y baselines se ejecutan de manera independiente, permitiendo comparaciones controladas entre configuraciones.
+
+## 6. Validación de reproducibilidad
+
+Se realizó una prueba desde un clon limpio del repositorio en Windows, utilizando el gestor de entornos `uv`.
+
+Las verificaciones exitosas incluyeron:
+
+- Clonación del repositorio desde GitHub.
+- Creación automática de un entorno aislado mediante uv.
+- Instalación de las dependencias declaradas.
+- Conexión al servidor de MLflow Tracking.
+- Descarga y procesamiento de los datos originales.
+- Generación de los 12 archivos Parquet y del manifiesto de datos.
+- Ejecución de P1, P2 y P3 mediante `mlflow run`.
+
+Los resultados reprodujeron las métricas de referencia de la primera entrega.
+
+**Limitaciones:** la prueba se realizó utilizando un servidor de Tracking local previamente configurado. La reproducción independiente del Model Registry y la gestión del ciclo de vida de modelos se abordarán en la siguiente etapa.
+
+Los archivos de datos, bases de datos de MLflow, directorios de artefactos locales y modelos serializados no deben incorporarse al repositorio.
