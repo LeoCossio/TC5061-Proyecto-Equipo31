@@ -161,7 +161,7 @@ def main(model="kmeans", n_clusters=P3_N_CLUSTERS):
             escaladas, grupos_kmeans
         )
 
-        with mlflow.start_run(run_name="...") as run:
+        with mlflow.start_run(run_name=f"P3-kmeans-k{n_clusters}") as run:
             print(f"MLflow Run ID: {run.info.run_id}")
             mlflow.log_params({
                 **parametros_comunes,

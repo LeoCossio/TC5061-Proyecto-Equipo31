@@ -58,3 +58,31 @@ P2_RF_MAX_DEPTH = 30
 P2_RF_MIN_SAMPLES_LEAF = 10
 P2_RF_MAX_SAMPLES = 0.3
 P2_RF_MAX_FEATURES = 0.8
+
+# ---------------------------------------------------------
+# Experimentación (entrega 4): búsquedas y candidatos
+# ---------------------------------------------------------
+EQUIPO_ID = "31"
+
+# P1: búsqueda de HistGradientBoostingRegressor (criterio: val_mae).
+P1_HGB_ESPACIO = {
+    "loss": ["poisson", "absolute_error"],
+    "learning_rate": [0.05, 0.1],
+    "max_leaf_nodes": [31, 127],
+}
+P1_HGB_MAX_ITER = 200
+P1_HGB_MIN_SAMPLES_LEAF = 100
+
+# P2: búsqueda de HistGradientBoostingClassifier (criterio: val_pr_auc).
+P2_HGB_ESPACIO = {
+    "learning_rate": [0.05, 0.1],
+    "max_leaf_nodes": [31, 63],
+    "l2_regularization": [0.0, 1.0],
+}
+P2_HGB_MAX_ITER = 200
+P2_HGB_MIN_SAMPLES_LEAF = 100
+P2_LR_C = 1.0
+
+# P3: búsqueda del número de grupos (criterio: silhouette, con k >= 3).
+P3_K_BUSQUEDA = [2, 3, 4, 5, 6, 7, 8]
+P3_K_MINIMO_SELECCION = 3

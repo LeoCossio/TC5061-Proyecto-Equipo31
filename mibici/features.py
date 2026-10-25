@@ -12,6 +12,7 @@ from mibici.feature_engineering.clustering import (
 )
 from mibici.feature_engineering.regresion import (
     COLUMNAS_P1,
+    COLUMNAS_P1_AMPLIADAS,
     OBJETIVO_P1,
     construir_panel_horario,
     crear_features_p1,
