@@ -38,6 +38,8 @@ P3_FECHA_FIN = "2026-09-30"
 P3_SEMILLA = 42
 P3_MIN_SALIDAS = 100
 
+P3_N_CLUSTERS = 3
+
 MLFLOW_EXPERIMENT = "mibici-equipo31"
 
 # Configuración del experimento P1 (regresión de demanda por estación-hora)
@@ -49,3 +51,10 @@ P1_SEMILLA = 42
 P1_RF_N_ESTIMADORES = 100
 P1_RF_MIN_SAMPLES_LEAF = 20
 P1_RF_MAX_SAMPLES = 0.3
+
+# Configuración de P2 - Clasificación
+P2_RF_N_ESTIMATORS = 150
+P2_RF_MAX_DEPTH = 30
+P2_RF_MIN_SAMPLES_LEAF = 10
+P2_RF_MAX_SAMPLES = 0.3
+P2_RF_MAX_FEATURES = 0.8

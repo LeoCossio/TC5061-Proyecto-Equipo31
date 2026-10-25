@@ -98,7 +98,12 @@ def guardar_grafica_importancias(modelo):
     return ruta
 
 
-def main():
+def main(
+    model="rfr",
+    n_estimators=P1_RF_N_ESTIMADORES,
+    min_samples_leaf=P1_RF_MIN_SAMPLES_LEAF,
+    max_samples=P1_RF_MAX_SAMPLES,
+):
     # 1. Cargar los mismos 12 meses de datos que usa el resto del equipo.
     archivos = sorted(PROCESSED_DATA_DIR.glob("*.parquet"))
     if len(archivos) != 12:
@@ -125,9 +130,6 @@ def main():
         text=True,
     ).strip()
 
-    mlflow.set_tracking_uri(
-        f"sqlite:///{(PROJ_ROOT / 'mlflow.db').as_posix()}"
-    )
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
     parametros_comunes = {
@@ -151,70 +153,99 @@ def main():
         "git_commit": commit,
     }
 
-    # 4. Baseline: media histórica por estación, día de la semana y hora.
-    pred_val_base = baseline_p1(validacion, media_global)
-    pred_test_base = baseline_p1(prueba, media_global)
-    metricas_base = {
-        **calcular_metricas("val", validacion, pred_val_base),
-        **calcular_metricas("test", prueba, pred_test_base),
-    }
-    figura_base = guardar_grafica_perfil_horario(
-        "p1_baseline_perfil_horario.png",
-        prueba,
-        pred_test_base,
-        "P1 - Baseline: demanda real vs. media histórica (prueba)",
+
+    # 4. Baseline
+    if model == "baseline":
+        pred_val = baseline_p1(validacion, media_global)
+        pred_test = baseline_p1(prueba, media_global)
+
+        metricas = {
+            **calcular_metricas("val", validacion, pred_val),
+            **calcular_metricas("test", prueba, pred_test),
+        }
+
+        figura = guardar_grafica_perfil_horario(
+            "p1_baseline_perfil_horario.png",
+            prueba,
+            pred_test,
+            "P1 - Baseline: demanda real vs. media histórica",
+        )
+
+        with mlflow.start_run(run_name="P1-baseline-media-historica"):
+            mlflow.log_params({
+                **parametros_comunes,
+                "modelo": "media_historica_estacion_dow_hora",
+            })
+            mlflow.log_metrics(metricas)
+            mlflow.set_tags({
+                **etiquetas,
+                "question": "p1",
+                "model_family": "baseline",
+                "stage_of_work": "baseline",
+            })
+            mlflow.log_artifact(str(figura))
+
+    # 5. Random Forest
+    elif model == "rfr":
+        modelo = entrenar_random_forest_p1(
+            entrenamiento,
+            semilla=P1_SEMILLA,
+            n_estimators=n_estimators,
+            min_samples_leaf=min_samples_leaf,
+            max_samples=max_samples,
+        )
+
+        pred_val = modelo.predict(validacion[COLUMNAS_P1])
+        pred_test = modelo.predict(prueba[COLUMNAS_P1])
+
+        metricas = {
+            **calcular_metricas("val", validacion, pred_val),
+            **calcular_metricas("test", prueba, pred_test),
+        }
+
+        figura = guardar_grafica_perfil_horario(
+            "p1_rf_perfil_horario.png",
+            prueba,
+            pred_test,
+            "P1 - RandomForest: demanda real vs. predicha",
+        )
+
+        figura_importancias = guardar_grafica_importancias(modelo)
+
+        with mlflow.start_run(run_name="...") as run:
+            print(f"MLflow Run ID: {run.info.run_id}")
+            mlflow.log_params({
+                **parametros_comunes,
+                "modelo": "RandomForestRegressor",
+                "n_estimators": n_estimators,
+                "min_samples_leaf": min_samples_leaf,
+                "max_samples": max_samples,
+            })
+            mlflow.log_metrics(metricas)
+            mlflow.set_tags({
+                **etiquetas,
+                "question": "p1",
+                "model_family": "random_forest",
+                "stage_of_work": "candidate",
+            })
+            mlflow.log_artifact(str(figura))
+            mlflow.log_artifact(str(figura_importancias))
+
+    else:
+        raise ValueError(f"Modelo no soportado para P1: {model}")
+
+    # 6. Resultados
+    print(
+        f"Filas entrenamiento/validación/prueba: "
+        f"{len(entrenamiento):,} / "
+        f"{len(validacion):,} / {len(prueba):,}"
     )
 
-    with mlflow.start_run(run_name="P1-baseline-media-historica"):
-        mlflow.log_params({
-            **parametros_comunes,
-            "modelo": "media_historica_estacion_dow_hora",
-        })
-        mlflow.log_metrics(metricas_base)
-        mlflow.set_tags(etiquetas)
-        mlflow.log_artifact(str(figura_base))
+    for nombre, valor in metricas.items():
+        print(f"{nombre}: {valor:.4f}")
 
-    # 5. RandomForestRegressor con las mismas características y particiones.
-    modelo = entrenar_random_forest_p1(
-        entrenamiento,
-        semilla=P1_SEMILLA,
-        n_estimators=P1_RF_N_ESTIMADORES,
-        min_samples_leaf=P1_RF_MIN_SAMPLES_LEAF,
-        max_samples=P1_RF_MAX_SAMPLES,
-    )
-    pred_val_rf = modelo.predict(validacion[COLUMNAS_P1])
-    pred_test_rf = modelo.predict(prueba[COLUMNAS_P1])
-    metricas_rf = {
-        **calcular_metricas("val", validacion, pred_val_rf),
-        **calcular_metricas("test", prueba, pred_test_rf),
-    }
-    figura_rf = guardar_grafica_perfil_horario(
-        "p1_rf_perfil_horario.png",
-        prueba,
-        pred_test_rf,
-        "P1 - RandomForest: demanda real vs. predicha (prueba)",
-    )
-    figura_importancias = guardar_grafica_importancias(modelo)
+    print(f"Modelo {model} registrado en MLflow")
 
-    with mlflow.start_run(run_name="P1-random-forest"):
-        mlflow.log_params({
-            **parametros_comunes,
-            "modelo": "RandomForestRegressor",
-            "n_estimators": P1_RF_N_ESTIMADORES,
-            "min_samples_leaf": P1_RF_MIN_SAMPLES_LEAF,
-            "max_samples": P1_RF_MAX_SAMPLES,
-        })
-        mlflow.log_metrics(metricas_rf)
-        mlflow.set_tags(etiquetas)
-        mlflow.log_artifact(str(figura_rf))
-        mlflow.log_artifact(str(figura_importancias))
-
-    print(f"Filas entrenamiento/validación/prueba: "
-          f"{len(entrenamiento):,} / {len(validacion):,} / {len(prueba):,}")
-    for nombre, metricas in (("baseline", metricas_base), ("RandomForest", metricas_rf)):
-        detalle = ", ".join(f"{k}={v:.4f}" for k, v in metricas.items())
-        print(f"{nombre}: {detalle}")
-    print("Ambos runs registrados en MLflow")
 
 
 if __name__ == "__main__":
