@@ -71,3 +71,25 @@ def test_baseline_no_tiene_valores_faltantes():
 
     assert prediccion.notna().all()
     assert len(prediccion) == len(features)
+
+
+def test_features_ampliadas_no_usan_la_hora_objetivo():
+    from mibici.features import COLUMNAS_P1_AMPLIADAS
+
+    panel = construir_panel_horario(_viajes_sinteticos(semanas=4))
+    features = crear_features_p1(panel)
+
+    hora_corte = features["hora_inicio"].sort_values().iloc[len(features) // 2]
+    modificado = panel.copy()
+    seleccion = (modificado["origen_id"] == 2) & (modificado["hora_inicio"] == hora_corte)
+    modificado.loc[seleccion, OBJETIVO_P1] += 50
+    features_mod = crear_features_p1(modificado)
+
+    # Las filas hasta la hora modificada deben quedar idénticas.
+    antes = features["hora_inicio"] <= hora_corte
+    antes_mod = features_mod["hora_inicio"] <= hora_corte
+    pd.testing.assert_frame_equal(
+        features.loc[antes, COLUMNAS_P1_AMPLIADAS].reset_index(drop=True),
+        features_mod.loc[antes_mod, COLUMNAS_P1_AMPLIADAS].reset_index(drop=True),
+    )
+    assert features[COLUMNAS_P1_AMPLIADAS].notna().all().all()

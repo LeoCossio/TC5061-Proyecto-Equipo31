@@ -12,3 +12,8 @@ entry_points:
       model: {type: string}
 
     command: "python -m mibici.project_train --question {question} --model {model}"
+
+  experiments:
+    parameters:
+      question: {type: string, default: all}
+    command: "python -m mibici.experimentos --question {question}"

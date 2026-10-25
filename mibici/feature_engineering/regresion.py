@@ -22,6 +22,15 @@ COLUMNAS_P1 = [
     "media_hist_estacion",
 ]
 
+# Características adicionales de la versión ampliada (experimentación).
+COLUMNAS_P1_AMPLIADAS = COLUMNAS_P1 + [
+    "media_hist_estacion_hora",
+    "tendencia_24_168",
+    "hora_sin",
+    "hora_cos",
+    "prop_horas_cero_24",
+]
+
 # Horas pico entre semana (mañana y tarde) para medir el error donde más importa.
 HORAS_PICO = [7, 8, 9, 17, 18, 19, 20]
 
@@ -87,6 +96,14 @@ def crear_features_p1(panel: pd.DataFrame) -> pd.DataFrame:
     observaciones pasadas, nunca la de la hora objetivo ni las posteriores.
     Se agregan también hora, día de la semana y fin de semana.
 
+    Además calcula cinco variables de la versión ampliada
+    (COLUMNAS_P1_AMPLIADAS): promedio histórico de la estación para esa hora
+    sin distinguir día, diferencia entre el promedio de 24 h y el de 168 h
+    (tendencia reciente), hora codificada como seno y coseno, y proporción de
+    horas sin salidas en las últimas 24 h (qué tan inactiva ha estado la
+    estación). Permiten probar si captar el nivel reciente y la continuidad
+    del ciclo diario mejora la predicción.
+
     Son pertinentes para la pregunta porque la demanda de una estación
     depende del ciclo diario y semanal de movilidad (calendario), de la
     intensidad reciente (rezagos y promedios móviles) y de su nivel habitual
@@ -130,8 +147,28 @@ def crear_features_p1(panel: pd.DataFrame) -> pd.DataFrame:
         (por_momento.cumsum() - y) / previas.where(previas > 0)
     )
 
+    # Variables adicionales de la versión ampliada. Siguen siendo causales:
+    # solo acumulan o promedian horas anteriores a la hora objetivo.
+    por_hora = y.groupby([datos["origen_id"], datos["hora"]])
+    previas_hora = por_hora.cumcount()
+    datos["media_hist_estacion_hora"] = (
+        (por_hora.cumsum() - y) / previas_hora.where(previas_hora > 0)
+    )
+
+    datos["tendencia_24_168"] = datos["media_movil_24"] - datos["media_movil_168"]
+
+    angulo = 2 * np.pi * datos["hora"] / 24
+    datos["hora_sin"] = np.sin(angulo)
+    datos["hora_cos"] = np.cos(angulo)
+
+    ceros = (y == 0).astype("float64").groupby(datos["origen_id"]).cumsum()
+    por_ceros = ceros.groupby(datos["origen_id"])
+    datos["prop_horas_cero_24"] = (
+        por_ceros.shift(1) - por_ceros.shift(25).fillna(0)
+    ) / 24
+
     datos = datos[posicion >= HORAS_CALENTAMIENTO].copy()
-    datos[COLUMNAS_P1] = datos[COLUMNAS_P1].astype("float32")
+    datos[COLUMNAS_P1_AMPLIADAS] = datos[COLUMNAS_P1_AMPLIADAS].astype("float32")
 
     return datos.reset_index(drop=True)
 

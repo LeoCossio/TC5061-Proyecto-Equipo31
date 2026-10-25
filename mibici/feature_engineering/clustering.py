@@ -138,3 +138,74 @@ def entrenar_kmeans_p3(features_escaladas: pd.DataFrame, n_clusters: int = 3):
     )
 
     return grupos, modelo
+
+
+COLUMNAS_P3_AMPLIADAS_EXTRA = ["entropia_horaria", "cv_diario", "prop_hora_pico"]
+
+
+def crear_features_p3_ampliadas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega tres características de comportamiento a las de `crear_features_p3`.
+
+    - `entropia_horaria`: entropía (en bits) del perfil de salidas por hora.
+      Es baja si la estación concentra su uso en pocas horas y alta si su uso
+      es uniforme durante el día.
+    - `cv_diario`: coeficiente de variación de las salidas diarias, desde el
+      primer día con actividad. Distingue estaciones estables de estaciones
+      con uso irregular.
+    - `prop_hora_pico`: proporción de salidas en horas pico entre semana
+      (7-9 y 17-20 h). Separa estaciones de movilidad laboral o escolar de las
+      de uso recreativo.
+
+    Mantiene las mismas estaciones que `crear_features_p3` para que ambas
+    versiones del espacio de características sean comparables.
+    """
+    base = crear_features_p3(df)
+
+    datos = df[["origen_id", "inicio"]].copy()
+    datos = datos[datos["origen_id"].isin(base.index)]
+    hora = datos["inicio"].dt.hour
+    entre_semana = datos["inicio"].dt.dayofweek < 5
+
+    # Entropía del perfil horario.
+    horas = (
+        datos.assign(hora=hora)
+        .groupby(["origen_id", "hora"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(columns=range(24), fill_value=0)
+    )
+    proporciones = horas.div(horas.sum(axis=1), axis=0)
+    logaritmo = np.log2(proporciones.where(proporciones > 0, 1.0))
+    entropia = -(proporciones * logaritmo).sum(axis=1)
+
+    # Variabilidad de las salidas diarias desde la primera actividad.
+    por_dia = (
+        datos.assign(dia=datos["inicio"].dt.normalize())
+        .groupby(["origen_id", "dia"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(columns=pd.date_range(
+            datos["inicio"].min().normalize(),
+            datos["inicio"].max().normalize(),
+            freq="D",
+        ), fill_value=0)
+    )
+    matriz = por_dia.to_numpy(dtype="float64")
+    primer_dia = (matriz > 0).argmax(axis=1)
+    mascara = np.arange(matriz.shape[1])[None, :] >= primer_dia[:, None]
+    dias_activos = mascara.sum(axis=1)
+    media = (matriz * mascara).sum(axis=1) / dias_activos
+    varianza = (((matriz - media[:, None]) ** 2) * mascara).sum(axis=1) / dias_activos
+    cv_diario = pd.Series(np.sqrt(varianza) / media, index=por_dia.index)
+
+    # Participación de las horas pico entre semana.
+    pico = entre_semana & hora.isin([7, 8, 9, 17, 18, 19, 20])
+    prop_pico = pico.groupby(datos["origen_id"]).mean()
+
+    base = base.copy()
+    base["entropia_horaria"] = entropia
+    base["cv_diario"] = cv_diario
+    base["prop_hora_pico"] = prop_pico
+
+    return base.fillna(0)

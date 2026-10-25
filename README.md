@@ -406,3 +406,79 @@ Los resultados reprodujeron las métricas de referencia de la primera entrega.
 **Limitaciones:** la prueba se realizó utilizando un servidor de Tracking local previamente configurado. La reproducción independiente del Model Registry y la gestión del ciclo de vida de modelos se abordarán en la siguiente etapa.
 
 Los archivos de datos, bases de datos de MLflow, directorios de artefactos locales y modelos serializados no deben incorporarse al repositorio.
+
+## 7. Experimentación y comparación de modelos (Parte B)
+
+Todas las corridas de esta sección se lanzan con `mlflow run` desde el MLflow Project, con el servidor de Tracking de la sección 5.1 activo y `MLFLOW_TRACKING_URI` apuntando a él.
+
+### 7.1 Cómo ejecutarlas
+
+Primero los baselines (una corrida por pregunta), igual que en la sección 5:
+
+```powershell
+mlflow run . -e train -P question=p1 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+mlflow run . -e train -P question=p2 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+mlflow run . -e train -P question=p3 -P model=baseline --env-manager uv --experiment-name mibici-equipo31
+```
+
+Después las búsquedas de hiperparámetros y los candidatos de cada pregunta (el punto de entrada `experiments` está definido en `MLproject` y ejecuta `mibici/experimentos/`):
+
+```powershell
+mlflow run . -e experiments -P question=p1 --env-manager uv --experiment-name mibici-equipo31
+mlflow run . -e experiments -P question=p2 --env-manager uv --experiment-name mibici-equipo31
+mlflow run . -e experiments -P question=p3 --env-manager uv --experiment-name mibici-equipo31
+```
+
+Los valores por defecto (espacios de búsqueda, semillas, fechas y particiones) están en `mibici/config.py`; no se repiten en el código. P1 y P2 tardan varios minutos porque construyen la serie horaria completa (más de 3 millones de filas por pregunta).
+
+### 7.2 Qué se registra
+
+Cada comando crea una corrida principal (`P1-experimentos`, `P2-experimentos`, `P3-experimentos`) y debajo, como *nested runs*:
+
+| Corrida | Etiqueta `stage_of_work` | Contenido |
+|---|---|---|
+| `P?-busqueda-...` (padre) | `search` | Espacio de búsqueda, criterio de selección y mejor combinación |
+| `P?-...-comb-NN` / `P3-kmeans-kN` (hijas) | `search` | Una por combinación; solo métricas de validación |
+| `P?-...` (candidatos) | `candidate` | Modelo, firma, ejemplo de entrada, métricas de validación y prueba, gráficas, datos y configuración |
+
+Las etiquetas para filtrar en la interfaz son `question` (`p1`, `p2`, `p3`), `model_family`, `stage_of_work` (`baseline`, `search`, `candidate`), `equipo` y `git_commit`. El parámetro `data_version` conserva la huella de los datos.
+
+Cada candidato guarda sus artefactos en subcarpetas:
+
+```text
+plots/    gráficas de desempeño (P1: perfil horario, real vs. predicho, residuales;
+          P2: matriz de confusión y curva precisión-recall;
+          P3: PCA, perfil de los grupos y mapa de estaciones)
+data/     manifiesto con hashes SHA-256 de los Parquet (references/manifest_datos.json)
+config/   config.py y los parámetros con que se ejecutó la corrida
+model/    modelo con firma (signature) y ejemplo de entrada
+```
+
+Además, el conjunto de entrenamiento se asocia a la corrida con `mlflow.log_input` (esquema, resumen y huella; no se copian las filas). No se registran identificadores de usuario: los Parquet de trabajo solo conservan viaje, fechas y estaciones.
+
+La partición temporal (entrenamiento hasta mayo de 2026, validación en junio–julio y prueba en agosto–septiembre) y las métricas son las mismas de los baselines, de modo que la comparación es válida.
+
+### 7.3 Candidatos por pregunta
+
+| Pregunta | Búsqueda (nested runs) | Candidatos |
+|---|---|---|
+| P1 | `HistGradientBoostingRegressor`: función de pérdida, tasa de aprendizaje y hojas máximas (8 combinaciones, criterio `val_mae`) | Random Forest con características base y ampliadas; Gradient Boosting con la mejor combinación, con características base y ampliadas |
+| P2 | `HistGradientBoostingClassifier`: tasa de aprendizaje, hojas máximas y regularización L2 (8 combinaciones, criterio `val_pr_auc`) | Random Forest de la primera entrega; regresión logística; Gradient Boosting con umbral 0.5; el mismo con el umbral que maximiza F1 en validación |
+| P3 | K-Means con k de 2 a 8 (criterio: silhouette con k ≥ 3) | K-Means con el mejor k; mezcla gaussiana; K-Means con características ampliadas |
+
+Las características ampliadas de P1 agregan el promedio histórico por hora, la tendencia reciente, la hora como seno y coseno y la proporción de horas sin salidas. Las de P3 agregan la entropía del perfil horario, la variabilidad de las salidas diarias y la proporción de uso en horas pico.
+
+### 7.4 Comparar y elegir
+
+```powershell
+python scripts/comparar_experimentos.py            # genera reports/comparacion_experimentos.md
+python scripts/comparar_experimentos.py --marcar   # además etiqueta al elegido: selected_for_production=true
+```
+
+El script lee las corridas del servidor de Tracking y arma, por pregunta, la tabla de baseline contra candidatos con la mejora respecto al baseline y el costo de entrenamiento. Los criterios de selección usan solo métricas de validación y están documentados en el propio script. En la interfaz de MLflow se puede filtrar con `tags.stage_of_work = "candidate"` y seleccionar corridas para **Compare**.
+
+**Limitaciones conocidas**
+
+- En P2 el modelo registrado con umbral de validación conserva el umbral como parámetro (`umbral_prediccion`); `predict()` aplica 0.5, por lo que `predict_proba` debe combinarse con ese umbral al desplegarlo.
+- Los modelos de P3 se guardan como `Pipeline` (log1p, estandarización y algoritmo). Para cargarlos solo se necesita scikit-learn.
+- Las corridas del baseline y de los candidatos deben ejecutarse con el mismo commit y los mismos datos (`data_version`) para que la comparación sea válida.
