@@ -117,11 +117,17 @@ def principal(marcar):
 
         filas = [{"corrida": "BASELINE " + str(baseline["tags.mlflow.runName"]),
                   **{c: valor(baseline, c) for c in cfg["hiper"] + cfg["metricas"] + COSTO},
-                  "mejora_test_%": 0.0, "brecha": float("nan")}]
+                  "mejora_vs_baseline_%": 0.0, "brecha": float("nan")}]
 
         metrica_sel, sentido = cfg["seleccion"]
         metrica_mejora, sentido_mejora = cfg["mejora"]
-        ref = float(valor(baseline, metrica_mejora))
+        if pregunta == "p3":
+            # El baseline registró su silhouette con el nombre de la primera entrega.
+            filas[0]["silhouette_espacio_base"] = valor(baseline, "train_silhouette_score")
+        if pregunta == "p2":
+            # El umbral del baseline es de presión, no de probabilidad: no es comparable.
+            filas[0]["umbral_prediccion"] = float("nan")
+        ref = float(filas[0][metrica_mejora])
         for _, fila in candidatos.iterrows():
             actual = float(valor(fila, metrica_mejora))
             mejora = 100 * ((ref - actual) if sentido_mejora == "min" else (actual - ref)) / abs(ref)
@@ -133,7 +139,7 @@ def principal(marcar):
             filas.append({"corrida": fila["tags.mlflow.runName"],
                           "run_id": fila["run_id"],
                           **{c: valor(fila, c) for c in cfg["hiper"] + cfg["metricas"] + COSTO},
-                          "mejora_test_%": mejora, "brecha": brecha})
+                          "mejora_vs_baseline_%": mejora, "brecha": brecha})
 
         elegibles = [f for f in filas[1:]
                      if pregunta != "p3" or float(f["grupo_mas_pequeno_pct"]) >= 5]
@@ -143,13 +149,17 @@ def principal(marcar):
 
         columnas = ["corrida", *[c for c in cfg["hiper"]
                                  if any(pd.notna(f.get(c)) for f in filas)],
-                    *cfg["metricas"], "mejora_test_%", *COSTO]
+                    *cfg["metricas"], "mejora_vs_baseline_%", *COSTO]
         partes.append(f"## {cfg['titulo']}\n")
         partes.append(f"Criterio de selección: {cfg['criterio']}.\n")
+        if pregunta == "p2":
+            partes.append("Nota: el umbral de `P2-hgb-umbral-validacion` se ajusta sobre "
+                          "validación, así que su `val_f1` es optimista; la comparación "
+                          "imparcial está en las columnas `test_`.\n")
         partes.append(tabla_markdown(filas, columnas) + "\n")
         partes.append(f"**Elegido:** `{elegido['corrida']}` "
                       f"({metrica_sel} = {formato(float(elegido[metrica_sel]))}, "
-                      f"mejora en {metrica_mejora} vs. baseline = {elegido['mejora_test_%']:.1f} %).\n")
+                      f"mejora relativa en {metrica_mejora} vs. baseline = {elegido['mejora_vs_baseline_%']:.1f} %).\n")
 
     SALIDA.write_text("\n".join(partes), encoding="utf-8")
     print(f"Reporte escrito en {SALIDA.relative_to(ROOT)}")
