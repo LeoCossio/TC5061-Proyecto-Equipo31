@@ -482,3 +482,61 @@ El script lee las corridas del servidor de Tracking y arma, por pregunta, la tab
 - En P2 el modelo registrado con umbral de validación conserva el umbral como parámetro (`umbral_prediccion`); `predict()` aplica 0.5, por lo que `predict_proba` debe combinarse con ese umbral al desplegarlo.
 - Los modelos de P3 se guardan como `Pipeline` (log1p, estandarización y algoritmo). Para cargarlos solo se necesita scikit-learn.
 - Las corridas del baseline y de los candidatos deben ejecutarse con el mismo commit y los mismos datos (`data_version`) para que la comparación sea válida.
+
+## 8. Validación de datos con DeepChecks (calidad y seguridad)
+
+Antes de entrenar se validan la integridad y la calidad de los datos con [DeepChecks](https://docs.deepchecks.com/). El módulo [`mibici/validacion_datos.py`](mibici/validacion_datos.py) revisa cuatro conjuntos: los 12 Parquet de **viajes**, la tabla estación-hora de **P1**, la de **P2** y los perfiles de estación de **P3** (periodo de entrenamiento contra periodo de prueba). El detalle de chequeos, umbrales y decisiones está en [`references/validacion_datos.md`](references/validacion_datos.md).
+
+| Nivel | Chequeos | Si falla |
+|---|---|---|
+| **Integridad** | Tipos de datos, valores faltantes, tipos mezclados, duplicados, columnas constantes, `viaje_id` único, fin posterior al inicio, fechas dentro del periodo y fuga temporal entre entrenamiento y prueba | Error: el comando termina con código 1 |
+| **Comparación** | Deriva (drift) de variables y de la etiqueta, filas idénticas entre entrenamiento y prueba, tamaño relativo y estaciones ausentes del catálogo | Advertencia (con `--estricto` también falla) |
+
+### 8.1 Ejecución
+
+Con el entorno instalado (sección 4) y los 12 Parquet en `data/processed/`:
+
+```bash
+# Los cuatro conjuntos (aprox. 3 minutos); escribe reports/validacion_datos.md
+python -m mibici.validacion_datos
+
+# Uno o varios conjuntos, y reportes interactivos de DeepChecks en reports/validacion/*.html
+python -m mibici.validacion_datos --conjuntos viajes p3 --html
+
+# Mediante el MLflow Project
+mlflow run . -e validate -P conjuntos=todos --env-manager uv
+
+# Pruebas unitarias de la validación (unos segundos)
+python -m pytest tests/test_validacion_datos.py
+```
+
+La prueba contra los datos reales está desactivada por defecto (tarda más de un minuto); se activa con `MIBICI_VALIDAR_DATOS_REALES=1`. Los reportes HTML son grandes y se regeneran, por eso `reports/validacion/` está en `.gitignore`.
+
+> **Nota de compatibilidad:** DeepChecks 0.19.1 usa alias que NumPy 2 eliminó (`np.Inf`, `np.NaN`, `np.float_`) y necesita `pkg_resources`. El módulo restablece esos alias antes de importar DeepChecks y `requirements.txt` fija `setuptools==80.9.0`.
+
+### 8.2 Resultados
+
+Última ejecución sobre los datos de octubre de 2025 a septiembre de 2026 (52 condiciones, **0 errores de integridad** y 4 advertencias de comparación). La tabla completa está en [`reports/validacion_datos.md`](reports/validacion_datos.md).
+
+| Conjunto | Resultado | Advertencias |
+|---|---|---|
+| `viajes` (4,497,119 filas) | Sin errores de integridad; sin deriva entre entrenamiento y prueba ni fuga temporal | 13 viajes duran más de 24 h; las estaciones 405 y 407 aparecen en los viajes pero no en la nomenclatura |
+| `p1` (2,086,349 entrenamiento / 682,188 prueba) | Sin errores; deriva de variables < 0.2 (máximo 0.13) y de la etiqueta 0.02 | Ninguna |
+| `p2` | Sin errores; sin deriva de variables ni de la etiqueta | El 12.77 % de las filas de prueba son idénticas a filas de entrenamiento (con pocas variables de baja cardinalidad es esperable) |
+| `p3` (369 estaciones en entrenamiento y 468 en prueba) | Sin errores; los perfiles de estación no derivan entre periodos | Unas 100 estaciones no tienen al menos 100 salidas en el periodo de entrenamiento (octubre–mayo) pero sí en el de prueba; conviene tratarlas como estaciones nuevas al evaluar la estabilidad de los grupos |
+
+### 8.3 Evidencia de ejecución
+
+Pruebas unitarias de la validación (25 pasan y 1, la de datos reales, se omite por defecto):
+
+![Pruebas de la validación de datos](reports/figures/validacion_pytest.png)
+
+Ejecución del comando sobre los cuatro conjuntos:
+
+![Ejecución de la validación con DeepChecks](reports/figures/validacion_comando.png)
+
+Reportes de DeepChecks (integridad de los viajes y comparación de entrenamiento contra prueba en P1):
+
+![DeepChecks: integridad de los viajes](reports/figures/deepchecks_integridad_viajes.png)
+
+![DeepChecks: entrenamiento contra prueba en P1](reports/figures/deepchecks_deriva_p1.png)

@@ -17,3 +17,8 @@ entry_points:
     parameters:
       question: {type: string, default: all}
     command: "python -m mibici.experimentos --question {question}"
+
+  validate:
+    parameters:
+      conjuntos: {type: string, default: todos}
+    command: "python -m mibici.validacion_datos --conjuntos {conjuntos}"
