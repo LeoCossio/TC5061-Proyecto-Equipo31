@@ -1,4 +1,5 @@
 beautifulsoup4==4.15.0
+deepchecks==0.19.1
 ipython==9.5.0
 jupyterlab==4.6.4
 loguru==0.7.3
@@ -13,6 +14,7 @@ python-dotenv==1.2.2
 requests==2.32.5
 ruff==0.17.1
 scikit-learn==1.7.2
+setuptools==80.9.0
 tqdm==4.67.3
 typer==0.25.1
 

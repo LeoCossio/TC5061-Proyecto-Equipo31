@@ -212,3 +212,6 @@ mlflow.db-*
 *.pkl
 *.pickle
 *.joblib
+
+# Reportes HTML de DeepChecks (se regeneran con python -m mibici.validacion_datos --html)
+reports/validacion/
