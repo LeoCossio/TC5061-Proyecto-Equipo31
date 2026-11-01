@@ -1,0 +1,289 @@
+﻿Run started:2026-11-01 15:29:42.129520+00:00
+
+Test results:
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/experimentos\comun.py:15:0
+14	import os
+15	import subprocess
+16	import tempfile
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/experimentos\comun.py:54:11
+53	    """Devuelve el hash del commit con el que se ejecuta la corrida."""
+54	    return subprocess.check_output(
+55	        ["git", "rev-parse", "HEAD"], cwd=PROJ_ROOT, text=True
+56	    ).strip()
+57
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/experimentos\comun.py:54:11
+53	    """Devuelve el hash del commit con el que se ejecuta la corrida."""
+54	    return subprocess.check_output(
+55	        ["git", "rev-parse", "HEAD"], cwd=PROJ_ROOT, text=True
+56	    ).strip()
+57
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/run_all.py:22:0
+21
+22	import subprocess
+23	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/run_all.py:59:8
+58	        # sys.executable usa el mismo entorno de Python que run_all.
+59	        subprocess.run(
+60	            [sys.executable, "-m", module],
+61	            cwd=PROJECT_ROOT,
+62	            check=True,
+63	        )
+64	        print(f"[COMPLETADO] {title}", flush=True)
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/train_p1.py:7:0
+6
+7	import subprocess
+8
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/train_p1.py:127:13
+126	    version = version_datos(archivos)
+127	    commit = subprocess.check_output(
+128	        ["git", "rev-parse", "HEAD"],
+129	        cwd=PROJ_ROOT,
+130	        text=True,
+131	    ).strip()
+132
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/train_p1.py:127:13
+126	    version = version_datos(archivos)
+127	    commit = subprocess.check_output(
+128	        ["git", "rev-parse", "HEAD"],
+129	        cwd=PROJ_ROOT,
+130	        text=True,
+131	    ).strip()
+132
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/train_p2.py:8:0
+7
+8	import subprocess
+9
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/train_p2.py:254:13
+253
+254	    commit = subprocess.check_output(
+255	        ["git", "rev-parse", "HEAD"],
+256	        cwd=PROJ_ROOT,
+257	        text=True,
+258	    ).strip()
+259
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/train_p2.py:254:13
+253
+254	    commit = subprocess.check_output(
+255	        ["git", "rev-parse", "HEAD"],
+256	        cwd=PROJ_ROOT,
+257	        text=True,
+258	    ).strip()
+259
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/train_p3.py:8:0
+7	import hashlib
+8	import subprocess
+9
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/train_p3.py:105:13
+104	    version = version_datos(archivos)
+105	    commit = subprocess.check_output(
+106	        ["git", "rev-parse", "HEAD"],
+107	        cwd=PROJ_ROOT,
+108	        text=True,
+109	    ).strip()
+110
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/train_p3.py:105:13
+104	    version = version_datos(archivos)
+105	    commit = subprocess.check_output(
+106	        ["git", "rev-parse", "HEAD"],
+107	        cwd=PROJ_ROOT,
+108	        text=True,
+109	    ).strip()
+110
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/tune_p2.py:11:0
+10	import json
+11	import subprocess
+12
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/tune_p2.py:113:13
+112	    version = version_datos(archivos)
+113	    commit = subprocess.check_output(
+114	        ["git", "rev-parse", "HEAD"],
+115	        cwd=PROJ_ROOT,
+116	        text=True,
+117	    ).strip()
+118
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/tune_p2.py:113:13
+112	    version = version_datos(archivos)
+113	    commit = subprocess.check_output(
+114	        ["git", "rev-parse", "HEAD"],
+115	        cwd=PROJ_ROOT,
+116	        text=True,
+117	    ).strip()
+118
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: mibici/tune_p2_finalistas.py:11:0
+10	import json
+11	import subprocess
+12
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: mibici/tune_p2_finalistas.py:116:13
+115	    version = version_datos(archivos)
+116	    commit = subprocess.check_output(
+117	        ["git", "rev-parse", "HEAD"],
+118	        cwd=PROJ_ROOT,
+119	        text=True,
+120	    ).strip()
+121
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: mibici/tune_p2_finalistas.py:116:13
+115	    version = version_datos(archivos)
+116	    commit = subprocess.check_output(
+117	        ["git", "rev-parse", "HEAD"],
+118	        cwd=PROJ_ROOT,
+119	        text=True,
+120	    ).strip()
+121
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'âœ…'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: mibici/validacion_datos.py:486:14
+485	    """Tabla en Markdown con el resultado de cada condiciÃ³n."""
+486	    iconos = {"PASS": "âœ…", "FAIL": "âŒ", "ERROR": "âš ï¸"}
+487	    lineas = ["# ValidaciÃ³n de datos con DeepChecks", "",
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'OK   '
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: mibici/validacion_datos.py:510:21
+509	        for h in propios:
+510	            marca = {"PASS": "OK   ", "FAIL": "FALLA", "ERROR": "ERROR"}[h.estado]
+511	            nota = " (advertencia)" if h.es_advertencia else ""
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 3607
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 22
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 2
+		High: 20
+Files skipped (0):
