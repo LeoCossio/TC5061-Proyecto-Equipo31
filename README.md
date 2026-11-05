@@ -771,3 +771,329 @@ Los cambios de seguridad, compatibilidad y documentación se desarrollan en una 
 **Observaciones**
 
 La compatibilidad de DeepChecks es temporal y se encuentra documentada. No se modificaron los algoritmos de entrenamiento.
+
+
+
+# Parte 4 — Despliegue de modelos mediante FastAPI
+
+## 14. Descripción del servicio
+
+Se desarrolló una API REST utilizando FastAPI para ofrecer inferencia en tiempo real sobre los tres modelos del proyecto MiBici.
+
+Los modelos se recuperan desde MLflow Model Registry mediante su nombre y versión, permitiendo separar el entrenamiento de la inferencia.
+
+El servicio integra tres funcionalidades:
+
+- **P1 — Regresión:** predicción de demanda de viajes por estación y hora.
+- **P2 — Clasificación:** identificación de riesgo indirecto de desbalance en estaciones.
+- **P3 — Clustering:** segmentación de estaciones según sus patrones de utilización.
+
+La API permite realizar predicciones mediante peticiones HTTP y obtener las respuestas en formato JSON.
+
+## 15. Modelos registrados en MLflow
+
+Se ejecutaron nuevamente los experimentos de P1, P2 y P3, utilizando los candidatos desarrollados durante la etapa de optimización.
+
+Los modelos seleccionados fueron registrados en MLflow Model Registry.
+
+| Modelo | Nombre en Registry | Versión | Algoritmo |
+|---|---|---|---|
+| P1 | `mibici-p1` | 1 | HistGradientBoostingRegressor |
+| P2 | `mibici-p2` | 1 | HistGradientBoostingClassifier |
+| P3 | `mibici-p3` | 1 | K-Means (k=4) |
+
+### 15.1 Resultados de los modelos
+
+Los modelos registrados obtuvieron las siguientes métricas:
+
+| Modelo | Métrica | Validación | Prueba |
+|---|---|---:|---:|
+| P1 | MAE | 0.7623 | 0.7654 |
+| P2 | F1-score | 0.4235 | 0.4548 |
+| P3 | Silhouette Score | 0.2049 | — |
+
+El modelo P1 se seleccionó por su menor MAE de validación entre los candidatos evaluados. P2 se seleccionó por su mayor F1-score de validación entre los resultados comparados. P3 se seleccionó por su mejor Silhouette Score.
+
+Estas métricas corresponden a los experimentos realizados y no representan pruebas de desempeño de la API.
+
+### 15.2 Reproducir los experimentos
+
+Con el servidor MLflow activo y los datos procesados disponibles:
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+
+mlflow run . -e experiments -P question=p1 --env-manager local --experiment-name mibici-equipo31
+mlflow run . -e experiments -P question=p2 --env-manager local --experiment-name mibici-equipo31
+mlflow run . -e experiments -P question=p3 --env-manager local --experiment-name mibici-equipo31
+```
+
+Se utiliza `--env-manager local` para aprovechar el entorno virtual existente. Durante las pruebas en Windows se encontró un problema al intentar crear un entorno aislado con `uv`, relacionado con la instalación editable del proyecto y la referencia a `README.md`.
+
+Las corridas deben ejecutarse desde la raíz del proyecto y requieren haber preparado previamente los datos.
+
+### 15.3 Recuperación de modelos
+
+La carga de modelos está implementada en `mibici/model_loader.py`.
+
+Este módulo configura la conexión a MLflow mediante la variable de entorno `MLFLOW_TRACKING_URI` y recupera los modelos utilizando las siguientes referencias:
+
+```python
+MODELS = {
+    "p1": "models:/mibici-p1/1",
+    "p2": "models:/mibici-p2/1",
+    "p3": "models:/mibici-p3/1",
+}
+```
+
+La función `load_model(question)` permite cargar cualquiera de los tres modelos. Si no se especifica una pregunta, se recupera P3 por defecto.
+
+Ejemplo:
+
+```python
+from mibici.model_loader import load_model
+
+model_p1 = load_model("p1")
+model_p2 = load_model("p2")
+model_p3 = load_model("p3")
+```
+
+La recuperación de los tres modelos fue comprobada exitosamente desde Python.
+
+**Importante:** la base de datos y los artefactos del Registry están almacenados localmente y no se incluyen en GitHub. Para reproducir el servicio en otra máquina es necesario disponer de un servidor MLflow con los modelos registrados y sus artefactos accesibles.
+
+## 16. Implementación de la API REST
+
+La aplicación se encuentra en `mibici/api.py` y utiliza FastAPI, Pydantic, pandas y los modelos de scikit-learn recuperados desde MLflow.
+
+### 16.1 Estructura implementada
+
+```text
+mibici/
+├── model_loader.py    # Recuperación desde MLflow Registry
+└── api.py             # Servicio REST con FastAPI
+```
+
+Las dependencias FastAPI y Uvicorn se agregaron al proyecto mediante `uv add`.
+
+### 16.2 Endpoints disponibles
+
+| Método | Endpoint | Funcionalidad |
+|---|---|---|
+| GET | `/health` | Verificación del servicio |
+| POST | `/predict/p1` | Predicción de demanda |
+| POST | `/predict/p2` | Clasificación de riesgo |
+| POST | `/predict/p3` | Segmentación de estaciones |
+| POST | `/predict` | Compatibilidad con P3 |
+
+Los endpoints de predicción utilizan esquemas Pydantic para definir los campos y tipos de entrada.
+
+### 16.3 Variables utilizadas
+
+**P1 — Regresión (17 variables)**
+
+`hora`, `dia_semana`, `fin_semana`, `lag_1`, `lag_2`, `lag_3`, `lag_24`, `lag_168`, `media_movil_24`, `media_movil_168`, `media_hist_estacion_dow_hora`, `media_hist_estacion`, `media_hist_estacion_hora`, `tendencia_24_168`, `hora_sin`, `hora_cos`, `prop_horas_cero_24`.
+
+**P2 — Clasificación (13 variables)**
+
+`hora`, `dia_semana`, `fin_semana`, `capacidad`, `salidas_lag_1`, `llegadas_lag_1`, `flujo_neto_lag_1`, `presion_lag_1`, `presion_lag_2`, `presion_lag_24`, `presion_lag_168`, `presion_media_24`, `presion_media_168`.
+
+**P3 — Clustering (6 variables)**
+
+`viajes_diarios`, `balance_relativo`, `proporcion_fin_semana`, `manana`, `mediodia`, `tarde`.
+
+Las variables deben calcularse utilizando los criterios de ingeniería de características definidos durante el entrenamiento.
+
+## 17. Ejecución local de la API
+
+### 17.1 Instalar dependencias
+
+Desde la raíz del proyecto:
+
+```powershell
+uv sync
+```
+
+### 17.2 Iniciar MLflow
+
+En una primera terminal PowerShell:
+
+```powershell
+uv run mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+```
+
+La interfaz de MLflow estará disponible en:
+
+http://127.0.0.1:5000
+
+### 17.3 Iniciar FastAPI
+
+En una segunda terminal PowerShell:
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+
+uv run uvicorn mibici.api:app --reload --port 8000
+```
+
+La API recupera los tres modelos registrados al iniciar la aplicación. Por ello, MLflow debe encontrarse disponible y contener las versiones configuradas.
+
+### 17.4 Documentación interactiva
+
+La documentación Swagger UI se genera automáticamente en:
+
+http://127.0.0.1:8000/docs
+
+Desde esta interfaz es posible consultar los esquemas, enviar peticiones y revisar las respuestas.
+
+## 18. Ejemplos de peticiones
+
+### 18.1 P1 — Predicción de demanda
+
+**Endpoint:** `POST /predict/p1`
+
+Petición:
+
+```json
+{
+  "hora": 8,
+  "dia_semana": 2,
+  "fin_semana": 0,
+  "lag_1": 5,
+  "lag_2": 4,
+  "lag_3": 6,
+  "lag_24": 7,
+  "lag_168": 5,
+  "media_movil_24": 5.5,
+  "media_movil_168": 5.2,
+  "media_hist_estacion_dow_hora": 6,
+  "media_hist_estacion": 4.8,
+  "media_hist_estacion_hora": 6.2,
+  "tendencia_24_168": 0.3,
+  "hora_sin": 0.8660254,
+  "hora_cos": -0.5,
+  "prop_horas_cero_24": 0.1
+}
+```
+
+La respuesta contiene el campo `demanda_predicha`, con el valor numérico calculado por el regresor.
+
+### 18.2 P2 — Clasificación de riesgo
+
+**Endpoint:** `POST /predict/p2`
+
+Petición:
+
+```json
+{
+  "hora": 8,
+  "dia_semana": 2,
+  "fin_semana": 0,
+  "capacidad": 20,
+  "salidas_lag_1": 8,
+  "llegadas_lag_1": 5,
+  "flujo_neto_lag_1": -3,
+  "presion_lag_1": 0.15,
+  "presion_lag_2": 0.1,
+  "presion_lag_24": 0.2,
+  "presion_lag_168": 0.12,
+  "presion_media_24": 0.15,
+  "presion_media_168": 0.13
+}
+```
+
+La respuesta contiene `clase_predicha`, con una clasificación binaria (`0` o `1`).
+
+### 18.3 P3 — Segmentación de estaciones
+
+**Endpoint:** `POST /predict/p3`
+
+Petición:
+
+```json
+{
+  "viajes_diarios": 100,
+  "balance_relativo": 0.2,
+  "proporcion_fin_semana": 0.3,
+  "manana": 0.4,
+  "mediodia": 0.35,
+  "tarde": 0.25
+}
+```
+
+Respuesta obtenida durante la prueba:
+
+```json
+{
+  "cluster": 2
+}
+```
+
+El modelo asigna las características proporcionadas a uno de cuatro clusters (0, 1, 2 o 3).
+
+Los ejemplos de esta sección son entradas ilustrativas utilizadas para comprobar el funcionamiento técnico de los endpoints, no observaciones verificadas de estaciones reales.
+
+## 19. Pruebas de funcionamiento
+
+Se realizaron pruebas locales mediante Swagger UI sobre los tres endpoints de predicción.
+
+| Endpoint | Resultado HTTP | Estado |
+|---|---|---|
+| `GET /health` | 200 OK | Exitoso |
+| `POST /predict/p1` | 200 OK | Exitoso |
+| `POST /predict/p2` | 200 OK | Exitoso |
+| `POST /predict/p3` | 200 OK | Exitoso |
+
+Las pruebas confirmaron que la API recibe las entradas, ejecuta los modelos recuperados desde MLflow y devuelve respuestas JSON.
+
+Estas pruebas validan la integración funcional local, pero no sustituyen las pruebas automatizadas ni la evaluación predictiva con datos reales.
+
+## 20. Estrategia de despliegue
+
+Se eligió una estrategia de **inferencia en tiempo real mediante API REST**, porque permite consultar los modelos utilizando peticiones HTTP.
+
+Los tres modelos se integraron inicialmente en una sola aplicación FastAPI, facilitando el consumo del servicio y reutilizando la conexión con MLflow.
+
+La estrategia seleccionada utiliza:
+
+- **MLflow Model Registry:** almacenamiento y versionado de modelos.
+- **FastAPI:** exposición de endpoints REST.
+- **Pydantic:** definición inicial de esquemas de entrada.
+- **scikit-learn:** ejecución de inferencias.
+- **MLFLOW_TRACKING_URI:** configuración de la conexión con MLflow.
+
+El diseño utiliza una única API con múltiples endpoints; no constituye todavía una arquitectura de microservicios.
+
+### Consideraciones técnicas
+
+P1 y P2 requieren características históricas calculadas previamente. La API no genera automáticamente estas variables a partir de los registros originales de viajes.
+
+P2 utiliza actualmente `predict()` del modelo registrado, por lo que aplica el comportamiento de clasificación del estimador. Si se decide utilizar el umbral optimizado durante la experimentación, será necesario incorporarlo explícitamente al servicio.
+
+Los modelos se cargan al iniciar FastAPI. Por ello, el servidor MLflow debe estar disponible durante el arranque, aunque las inferencias posteriores se realizan utilizando los modelos cargados en memoria.
+
+## 21. Estado de la integración con contenedores
+
+La implementación local de FastAPI está terminada y comprobada.
+
+La siguiente etapa consiste en empaquetar el servicio utilizando Docker o Podman y validar su funcionamiento desde un contenedor.
+
+### Pendientes
+
+- [x] Registrar P1, P2 y P3 en MLflow Model Registry.
+- [x] Implementar recuperación de modelos por nombre y versión.
+- [x] Crear API REST con FastAPI.
+- [x] Definir esquemas iniciales de entrada con Pydantic.
+- [x] Implementar los tres endpoints de predicción.
+- [x] Verificar respuestas HTTP 200 mediante Swagger.
+- [ ] Incorporar validaciones adicionales y esquemas de salida.
+- [ ] Crear Containerfile o Dockerfile.
+- [ ] Construir la imagen del contenedor.
+- [ ] Configurar acceso a MLflow desde el contenedor.
+- [ ] Probar las predicciones desde el contenedor.
+- [ ] Incorporar evidencia visual del despliegue.
+- [ ] Documentar los comandos definitivos de construcción y ejecución.
+
+Los puntos pendientes se completarán durante la integración de las contribuciones del equipo.
+
+**Nota de reproducibilidad:** para desplegar el servicio en otro entorno será necesario asegurar el acceso a los modelos y artefactos registrados en MLflow. La existencia del código y de las referencias `models:/...` no implica que los modelos estén disponibles automáticamente en una instalación nueva.
