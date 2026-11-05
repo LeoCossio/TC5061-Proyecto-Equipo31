@@ -41,6 +41,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from mibici.compatibilidad import preparar_deepchecks
+
+preparar_deepchecks()
 
 def _compatibilidad_numpy2():
     """DeepChecks 0.19 usa alias que NumPy 2 eliminó (np.Inf, np.NaN, np.float_).

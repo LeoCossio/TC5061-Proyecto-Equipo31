@@ -4,7 +4,7 @@ Generado con `python -m mibici.validacion_datos`.
 
 ## viajes
 
-22 condiciones: 0 errores de integridad, 3 advertencias de comparación (63 s).
+22 condiciones: 0 errores de integridad, 3 advertencias de comparación (96 s).
 
 | Nivel | Chequeo | Condición | Resultado | Detalle |
 |---|---|---|---|---|
@@ -33,7 +33,7 @@ Generado con `python -m mibici.validacion_datos`.
 
 ## p1
 
-11 condiciones: 0 errores de integridad, 0 advertencias de comparación (59 s).
+11 condiciones: 0 errores de integridad, 0 advertencias de comparación (87 s).
 
 | Nivel | Chequeo | Condición | Resultado | Detalle |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@ Generado con `python -m mibici.validacion_datos`.
 
 ## p2
 
-11 condiciones: 0 errores de integridad, 1 advertencias de comparación (57 s).
+11 condiciones: 0 errores de integridad, 1 advertencias de comparación (82 s).
 
 | Nivel | Chequeo | Condición | Resultado | Detalle |
 |---|---|---|---|---|

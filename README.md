@@ -540,3 +540,234 @@ Reportes de DeepChecks (integridad de los viajes y comparación de entrenamiento
 ![DeepChecks: integridad de los viajes](reports/figures/deepchecks_integridad_viajes.png)
 
 ![DeepChecks: entrenamiento contra prueba en P1](reports/figures/deepchecks_deriva_p1.png)
+
+# Parte 3 — Pruebas automatizadas y seguridad
+
+## 9. Pruebas automatizadas con PyTest
+
+El proyecto incorpora pruebas automatizadas con **PyTest** para verificar el procesamiento de datos, la ingeniería de características, la reproducibilidad del entrenamiento y las validaciones de calidad de datos.
+
+Las pruebas se encuentran en la carpeta `tests/` y pueden ejecutarse conjuntamente mediante un único comando.
+
+### 9.1 Organización de las pruebas
+
+| Archivo | Responsabilidad |
+|---|---|
+| `test_data.py` | Limpieza, duplicados, registros inválidos y casos límite |
+| `test_features_p1.py` | Construcción de variables temporales y prevención de fuga de información |
+| `test_features_p3.py` | Generación y consistencia de características para clustering |
+| `test_reproducibilidad.py` | Consistencia de las predicciones de Random Forest utilizando la misma semilla |
+| `test_validacion_datos.py` | Validaciones de esquema, integridad, duplicados, drift y separación temporal |
+| `conftest.py` | Inicialización de compatibilidad para DeepChecks |
+
+### 9.2 Ejecución
+
+Desde la raíz del repositorio, con las dependencias instaladas:
+
+```powershell
+uv run --no-sync python -m pytest tests/ -v
+```
+
+Para obtener un resumen compacto:
+
+```powershell
+uv run --no-sync python -m pytest tests/ -q
+```
+
+### 9.3 Resultados
+
+La ejecución completa del 1 de noviembre de 2026 obtuvo:
+
+| Indicador | Resultado |
+|---|---|
+| Pruebas recopiladas | 37 |
+| Pruebas exitosas | 36 |
+| Pruebas fallidas | 0 |
+| Pruebas omitidas | 1 |
+
+La prueba omitida corresponde a la validación del dataset real, desactivada por defecto debido a su tiempo de ejecución. Puede habilitarse mediante la variable `MIBICI_VALIDAR_DATOS_REALES=1`.
+
+La prueba de reproducibilidad verificó que dos entrenamientos de Random Forest con la misma semilla producen predicciones idénticas en el escenario evaluado.
+
+Se observaron advertencias de obsolescencia procedentes de bibliotecas externas, sin impedir la ejecución de las pruebas.
+
+## 10. Validación de calidad con DeepChecks
+
+La validación de datos se realiza mediante `mibici/validacion_datos.py`, utilizando DeepChecks y controles adicionales de integridad.
+
+Para ejecutar todos los conjuntos y generar los reportes HTML:
+
+```powershell
+uv run --no-sync python -m mibici.validacion_datos --conjuntos todos --html
+```
+
+### 10.1 Resultados
+
+La ejecución sobre los conjuntos de viajes, P1, P2 y P3 produjo:
+
+| Indicador | Resultado |
+|---|---|
+| Condiciones evaluadas | 52 |
+| Errores de integridad | 0 |
+| Advertencias de comparación | 4 |
+
+Las advertencias corresponden a 13 viajes con duración superior a 24 horas, estaciones 405 y 407 ausentes del catálogo de origen y destino, y un 12.77 % de coincidencia de muestras de prueba con entrenamiento en P2, superior al umbral del 5 %.
+
+La coincidencia de P2 requiere seguimiento, aunque las comprobaciones específicas de fuga temporal no detectaron errores.
+
+El resumen se genera en `reports/validacion_datos.md` y los reportes HTML en `reports/validacion/`. Estos últimos se excluyen de Git por su tamaño y porque pueden regenerarse.
+
+## 11. Análisis de seguridad
+
+Se realizaron análisis estáticos del código, auditoría de dependencias y revisión básica del repositorio para identificar riesgos de seguridad.
+
+### 11.1 Análisis estático con Bandit
+
+Se utilizó Bandit para revisar recursivamente los archivos Python del paquete `mibici/`.
+
+Instalación:
+
+```powershell
+uv pip install bandit
+```
+
+Ejecución:
+
+```powershell
+uv run --no-sync bandit -r mibici/
+```
+
+Para generar un reporte en texto:
+
+```powershell
+uv run --no-sync bandit -r mibici/ -f txt -o bandit_report.txt
+```
+
+**Resultados del análisis:**
+
+| Severidad | Hallazgos |
+|---|---|
+| Alta | 0 |
+| Media | 0 |
+| Baja | 22 |
+
+Se analizaron 3,607 líneas de código. Los hallazgos de severidad baja corresponden principalmente al uso de `subprocess`, llamadas al ejecutable `git` y detecciones incorrectas de posibles contraseñas en cadenas utilizadas para representar estados de validación.
+
+Los hallazgos fueron revisados y no justificaron modificar los algoritmos de entrenamiento. No obstante, deben considerarse advertencias de análisis estático, no una garantía de ausencia de vulnerabilidades.
+
+### 11.2 Auditoría de dependencias con pip-audit
+
+Se utilizó `pip-audit` para identificar vulnerabilidades conocidas en los paquetes instalados.
+
+Instalación:
+
+```powershell
+uv pip install pip-audit
+```
+
+Ejecución:
+
+```powershell
+uv run --no-sync pip-audit
+```
+
+El análisis inicial detectó **6 vulnerabilidades conocidas en 3 dependencias**.
+
+| Dependencia | Versión inicial | Versión actualizada |
+|---|---|---|
+| `mlflow` | 3.17.1 | 3.17.2 |
+| `requests` | 2.32.5 | 2.33.0 |
+| `setuptools` | 80.9.0 | 84.1.0 |
+
+Después de actualizar `requirements.txt` y reinstalar las dependencias, se repitió el análisis.
+
+**Resultado final: 0 vulnerabilidades conocidas en las dependencias auditables.**
+
+El paquete local `mibici` no pudo analizarse mediante la base de datos de PyPI, por lo que este resultado no representa una auditoría exhaustiva del código propio.
+
+### 11.3 Revisión de credenciales y archivos sensibles
+
+Se verificó la configuración de `.gitignore` para evitar incorporar archivos sensibles y artefactos locales al repositorio.
+
+Entre las exclusiones existentes se encuentran:
+
+- Archivos `.env` y variantes de configuración local.
+- Entornos virtuales `.venv/`.
+- Datos originales y procesados en `data/`.
+- Bases de datos y artefactos de MLflow.
+- Modelos serializados.
+- Reportes HTML regenerables de DeepChecks.
+
+Se ejecutaron búsquedas de patrones asociados con credenciales y de nombres de archivos sensibles entre los archivos rastreados por Git, sin obtener coincidencias.
+
+También se ejecutó `git diff --check`, sin detectar problemas de formato.
+
+Estas verificaciones constituyen una revisión básica y no sustituyen un análisis especializado del historial completo de Git.
+
+## 12. Compatibilidad y verificación posterior a las actualizaciones
+
+La actualización de `setuptools` eliminó la disponibilidad de `pkg_resources`, utilizado internamente por DeepChecks 0.19.1.
+
+Para mantener las dependencias actualizadas se implementó una capa temporal de compatibilidad mediante:
+
+- `mibici/compatibilidad.py`: proporciona las funcionalidades necesarias en memoria.
+- `mibici/validacion_datos.py`: inicializa la compatibilidad antes de importar DeepChecks.
+- `tests/conftest.py`: inicializa la compatibilidad durante las pruebas automatizadas.
+
+La solución no modifica los archivos instalados de DeepChecks ni los algoritmos P1, P2 y P3.
+
+Después de implementar el ajuste se verificó que:
+
+1. El módulo de validación puede ejecutarse directamente.
+2. La suite de PyTest continúa funcionando.
+3. Los cuatro conjuntos de datos pueden validarse mediante DeepChecks.
+4. La auditoría final de dependencias no identifica vulnerabilidades conocidas entre los paquetes auditables.
+
+Esta adaptación es una solución temporal que deberá revisarse cuando cambien las dependencias.
+
+## 13. Evidencias y trazabilidad
+
+Los resultados de las pruebas, la validación de datos y las revisiones de seguridad se documentan mediante reportes y capturas conservados en el repositorio.
+
+La ejecución de PyTest, los reportes de DeepChecks, los hallazgos de Bandit y el resultado final de pip-audit deberán contar con evidencia visual en `reports/figures/`.
+
+Los cambios de seguridad, compatibilidad y documentación se desarrollan en una rama independiente y se integran mediante Pull Request, preservando el historial de contribuciones individuales del equipo.
+
+### 13.1 Evidencias de ejecución
+
+**Pruebas automatizadas con PyTest**
+
+![Resultados de PyTest](reports/figures/pytest_resultados.png)
+
+**Validación de datos con DeepChecks**
+
+![Resultados de DeepChecks](reports/figures/deepchecks_resultados.png)
+
+**Análisis estático con Bandit**
+
+![Resultados de Bandit](reports/figures/bandit_resultados.png)
+
+**Auditoría de dependencias con pip-audit**
+
+![Resultados de pip-audit](reports/figures/pip_audit_resultados.png)
+
+
+### Security checks and documentation
+
+**Cambios realizados**
+- Análisis estático de seguridad con Bandit.
+- Auditoría de dependencias con pip-audit.
+- Actualización de dependencias con vulnerabilidades conocidas.
+- Implementación de compatibilidad para DeepChecks 0.19.1.
+- Actualización del README con instrucciones y resultados.
+- Incorporación de evidencias de ejecución.
+
+**Verificaciones**
+- PyTest: 36 pruebas exitosas, 1 omitida.
+- DeepChecks: 52 condiciones, 0 errores de integridad y 4 advertencias.
+- Bandit: 22 hallazgos de severidad baja, ninguno medio o alto.
+- pip-audit: 0 vulnerabilidades conocidas en las dependencias auditables.
+
+**Observaciones**
+
+La compatibilidad de DeepChecks es temporal y se encuentra documentada. No se modificaron los algoritmos de entrenamiento.
