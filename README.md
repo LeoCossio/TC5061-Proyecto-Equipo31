@@ -1072,28 +1072,162 @@ P2 utiliza actualmente `predict()` del modelo registrado, por lo que aplica el c
 
 Los modelos se cargan al iniciar FastAPI. Por ello, el servidor MLflow debe estar disponible durante el arranque, aunque las inferencias posteriores se realizan utilizando los modelos cargados en memoria.
 
-## 21. Estado de la integración con contenedores
+## 21. Contenedor: construcción, ejecución y consumo de la API
 
-La implementación local de FastAPI está terminada y comprobada.
+La API de la sección 16 se empaqueta en una imagen OCI definida en [`Containerfile`](Containerfile). El motor de contenedores elegido es **Docker** (se probó con Docker Desktop 29.5 en macOS).
 
-La siguiente etapa consiste en empaquetar el servicio utilizando Docker o Podman y validar su funcionamiento desde un contenedor.
+### 21.1 Cómo se obtiene el modelo dentro del contenedor
 
-### Pendientes
+Se combinan las dos opciones que permite la actividad:
 
-- [x] Registrar P1, P2 y P3 en MLflow Model Registry.
-- [x] Implementar recuperación de modelos por nombre y versión.
-- [x] Crear API REST con FastAPI.
-- [x] Definir esquemas iniciales de entrada con Pydantic.
-- [x] Implementar los tres endpoints de predicción.
-- [x] Verificar respuestas HTTP 200 mediante Swagger.
-- [ ] Incorporar validaciones adicionales y esquemas de salida.
-- [ ] Crear Containerfile o Dockerfile.
-- [ ] Construir la imagen del contenedor.
-- [ ] Configurar acceso a MLflow desde el contenedor.
-- [ ] Probar las predicciones desde el contenedor.
-- [ ] Incorporar evidencia visual del despliegue.
-- [ ] Documentar los comandos definitivos de construcción y ejecución.
+| Modelo | Origen dentro del contenedor | Configuración |
+|---|---|---|
+| **P1** (demanda) | **Empaquetado en la imagen**: copia del modelo descargado del Registry en [`modelos_serving/`](modelos_serving/) (formato MLflow con firma y ejemplo de entrada) | Variable `MIBICI_MODEL_P1_PATH=/app/modelos_serving`, ya definida en el `Containerfile` |
+| **P2** (riesgo) y **P3** (grupos) | **Model Registry de MLflow**, por nombre y versión (`models:/mibici-equipo31-p2-riesgo/1` y `models:/mibici-equipo31-p3-grupos/1`) | Variable `MLFLOW_TRACKING_URI` apuntando al servidor |
 
-Los puntos pendientes se completarán durante la integración de las contribuciones del equipo.
+> **¿Qué es el Model Registry?** Es el catálogo de modelos de MLflow: guarda cada modelo entrenado con un **nombre** y un número de **versión** (por ejemplo, `mibici-equipo31-p3-grupos`, versión 1), junto con el experimento, la corrida y los datos de los que salió. El servicio pide el modelo por nombre y versión (`models:/<nombre>/<versión>`) en lugar de buscar un archivo, de modo que se puede cambiar de versión sin tocar el código de la API. Vive en el servidor de MLflow, por eso el contenedor necesita su dirección (`MLFLOW_TRACKING_URI`).
 
-**Nota de reproducibilidad:** para desplegar el servicio en otro entorno será necesario asegurar el acceso a los modelos y artefactos registrados en MLflow. La existencia del código y de las referencias `models:/...` no implica que los modelos estén disponibles automáticamente en una instalación nueva.
+Con esto la imagen funciona sola para P1 (no necesita red ni servidor MLflow) y, si se le indica dónde está el Registry, también sirve P2 y P3. La lógica está en [`mibici/model_loader.py`](mibici/model_loader.py): si existe `MIBICI_MODEL_<P1|P2|P3>_PATH` carga la carpeta local; si no, consulta el Registry.
+
+### 21.2 Construir la imagen
+
+Desde la raíz del repositorio:
+
+```bash
+docker build -f Containerfile -t mibici-api:1.0 .
+```
+
+El archivo `.dockerignore` (y `.containerignore`) deja fuera de la imagen los datos, las pruebas, los reportes, los notebooks y cualquier archivo `.env`, llave o certificado. La imagen resultante pesa unos 1.3 GB (principalmente MLflow y scikit-learn).
+
+### 21.3 Levantar el contenedor
+
+**Solo P1** (sin Registry):
+
+```bash
+docker run -d --name mibici-api -p 8000:8000 mibici-api:1.0
+```
+
+**P1, P2 y P3** (con un servidor MLflow en la máquina anfitriona):
+
+```bash
+# Desde el contenedor, la máquina anfitriona se ve como host.docker.internal
+docker run -d --name mibici-api -p 8000:8000 \
+  -e MLFLOW_TRACKING_URI=http://host.docker.internal:5000 mibici-api:1.0
+```
+
+El servidor MLflow rechaza por defecto los encabezados `Host` desconocidos (protección contra DNS rebinding), así que debe autorizar el nombre que usa el contenedor, sin abrirlo a la red:
+
+```bash
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000 \
+  --allowed-hosts "localhost:5000,127.0.0.1:5000,host.docker.internal:5000"
+```
+
+Comprobar que el contenedor está activo y revisar sus registros:
+
+```bash
+docker ps --filter name=mibici-api
+docker logs mibici-api
+```
+
+### 21.4 Consumir la API
+
+Los ejemplos de entrada están en [`references/ejemplos_api/`](references/ejemplos_api/). Documentación interactiva: <http://127.0.0.1:8000/docs>.
+
+**Estado del servicio**
+
+```bash
+curl -s http://127.0.0.1:8000/health
+```
+
+```json
+{"status":"ok"}
+```
+
+**Predicción de demanda (P1)**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/predict/p1 \
+  -H "Content-Type: application/json" \
+  -d @references/ejemplos_api/p1.json
+```
+
+Respuesta obtenida desde el contenedor (HTTP 200):
+
+```json
+{"demanda_predicha":6.513090266629504}
+```
+
+**Segmentación de estaciones (P3, modelo del Registry)**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/predict/p3 \
+  -H "Content-Type: application/json" \
+  -d @references/ejemplos_api/p3.json
+```
+
+Respuesta obtenida desde el contenedor con `MLFLOW_TRACKING_URI` apuntando a un servidor local (HTTP 200):
+
+```json
+{"cluster":2}
+```
+
+**Validación de entradas.** Con `hora = 25` ([`p1_hora_invalida.json`](references/ejemplos_api/p1_hora_invalida.json)) la API rechaza la petición antes de llamar al modelo (HTTP 422):
+
+```json
+{"detail":[{"type":"less_than_equal","loc":["body","hora"],"msg":"Input should be less than or equal to 23","input":25,"ctx":{"le":23}}]}
+```
+
+Los esquemas de [`mibici/esquemas_api.py`](mibici/esquemas_api.py) también rechazan campos faltantes (`missing`) o adicionales (`extra_forbidden`), valores `NaN` o infinitos y tipos que no coinciden.
+
+### 21.5 Prueba automatizada del contenedor
+
+El script [`scripts/probar_contenedor.sh`](scripts/probar_contenedor.sh) construye la imagen, levanta el contenedor, espera a que responda, verifica los códigos HTTP y el contenido de cada respuesta, y elimina el contenedor al terminar:
+
+```bash
+scripts/probar_contenedor.sh                         # prueba /health, P1 y un caso inválido
+MLFLOW_TRACKING_URI=http://host.docker.internal:5000 scripts/probar_contenedor.sh   # además P2 y P3
+```
+
+Resultado de la última ejecución (con la imagen ya construida):
+
+```text
+[OK]    GET  /health -> HTTP 200  {"status":"ok"}
+[OK]    POST /predict/p1 (modelo empaquetado en la imagen) -> HTTP 200  {"demanda_predicha":6.513090266629504}
+[OK]    POST /predict/p1 con hora = 25 (debe rechazarse) -> HTTP 422  {"detail":[{"type":"less_than_equal", ...
+[OMITIDO] P2 y P3: definir MLFLOW_TRACKING_URI para probarlos desde el Registry
+== Todas las pruebas pasaron
+```
+
+### 21.6 Evidencia de ejecución
+
+Construcción de la imagen, contenedor en ejecución y peticiones con `curl` (salida real de los comandos):
+
+![Construcción y ejecución del contenedor con Docker](reports/figures/contenedor_docker_ejecucion.png)
+
+Swagger UI servido por el contenedor, con una petición `POST /predict/p1` que devuelve HTTP 200:
+
+![API respondiendo desde el contenedor](reports/figures/contenedor_swagger_p1.png)
+
+Contenedor con `MLFLOW_TRACKING_URI` apuntando a un servidor MLflow local (en esta prueba, en el puerto 5001): P3 se carga del Registry y P1 del modelo empaquetado (ambos HTTP 200):
+
+![Contenedor consumiendo el Model Registry](reports/figures/contenedor_registry_p3.png)
+
+### 21.7 Estrategia de despliegue
+
+Se eligió **inferencia en tiempo real mediante una API REST empaquetada en un contenedor**, por estas razones:
+
+- **La decisión es por estación y por hora.** El operador y el equipo de rebalanceo necesitan consultar la demanda o el riesgo de una estación concreta en la siguiente hora; una petición HTTP por consulta encaja con ese uso. Los modelos son pequeños (el de P1 pesa unos 3 MB) y, medido desde el anfitrión con `curl`, `/predict/p1` respondió en 29 ms la primera vez y en 7 ms la segunda.
+- **Servicio sin estado.** Cada petición lleva todas sus variables, así que se pueden levantar varias réplicas del mismo contenedor sin coordinarlas.
+- **Reproducibilidad.** La imagen fija las versiones de Python y de las librerías y, para P1, incluye el modelo; funciona igual en cualquier máquina con Docker.
+- **Separación entre entrenamiento e inferencia.** P2 y P3 se leen del Model Registry por nombre y versión, de modo que cambiar de versión no obliga a reconstruir la imagen.
+
+La inferencia **por lotes** (calcular cada hora la predicción de las 470 estaciones y guardarla) también es posible con la misma imagen, y sería preferible para P3, cuyos perfiles cambian lentamente. No se eligió como estrategia principal porque requiere programar y almacenar los resultados, algo que queda fuera de esta entrega.
+
+### 21.8 Limitaciones y observaciones del despliegue
+
+- **La API no calcula las variables de entrada.** P1 y P2 usan rezagos y promedios históricos de la estación; quien consume el servicio debe enviarlos ya calculados con los criterios de entrenamiento. Un servicio de variables o un trabajo por lotes sería el siguiente paso.
+- **P2 aplica el umbral de 0.5.** `predict()` del modelo registrado no incorpora el umbral de 0.714 que se eligió en validación (sección 15.1).
+- **Versión de scikit-learn.** El `Containerfile` fija `scikit-learn==1.9.1`, la versión con la que se entrenaron los modelos registrados, mientras que `requirements.txt` fija `1.7.2`. Un modelo entrenado con el entorno de `requirements.txt` no se puede cargar en la imagen: una prueba con un modelo P2 entrenado con 1.7.2 falló con `ModuleNotFoundError: No module named '_loss'`. Conviene unificar la versión en ambos archivos y en `python_env.yaml`.
+- **Dirección del anfitrión.** El `Containerfile` define por defecto `MLFLOW_TRACKING_URI=http://host.containers.internal:5000`, un nombre que Docker no resuelve: la primera petición a P2 o P3 queda esperando mientras MLflow reintenta. Con Docker hay que pasar `-e MLFLOW_TRACKING_URI=http://host.docker.internal:5000` (sección 21.3).
+- **Nombres en el Registry.** El código (`model_loader.py`) usa `mibici-equipo31-p1-demanda`, `mibici-equipo31-p2-riesgo` y `mibici-equipo31-p3-grupos`, versión 1; la tabla de la sección 15 y los ejemplos de la 15.3 muestran `mibici-p1`, `mibici-p2` y `mibici-p3`. Deben coincidir con los nombres realmente registrados en el servidor que use el contenedor.
+- **Qué se verificó desde el contenedor.** `/health`, `/predict/p1` (modelo empaquetado) y `/predict/p3` (modelo del Registry) devolvieron HTTP 200, y las entradas inválidas devolvieron 422. `/predict/p2` desde el Registry no se pudo verificar en la máquina de pruebas porque el modelo P2 disponible allí se había entrenado con scikit-learn 1.7.2 (punto anterior); su ruta de carga es la misma que la de P3.
