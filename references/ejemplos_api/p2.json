@@ -1,0 +1,15 @@
+{
+  "hora": 8,
+  "dia_semana": 2,
+  "fin_semana": 0,
+  "capacidad": 20,
+  "salidas_lag_1": 8,
+  "llegadas_lag_1": 5,
+  "flujo_neto_lag_1": -3,
+  "presion_lag_1": 0.15,
+  "presion_lag_2": 0.1,
+  "presion_lag_24": 0.2,
+  "presion_lag_168": 0.12,
+  "presion_media_24": 0.15,
+  "presion_media_168": 0.13
+}

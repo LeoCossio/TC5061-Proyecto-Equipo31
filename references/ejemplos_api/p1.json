@@ -1,0 +1,19 @@
+{
+  "hora": 8,
+  "dia_semana": 2,
+  "fin_semana": 0,
+  "lag_1": 5,
+  "lag_2": 4,
+  "lag_3": 6,
+  "lag_24": 7,
+  "lag_168": 5,
+  "media_movil_24": 5.5,
+  "media_movil_168": 5.2,
+  "media_hist_estacion_dow_hora": 6,
+  "media_hist_estacion": 4.8,
+  "media_hist_estacion_hora": 6.2,
+  "tendencia_24_168": 0.3,
+  "hora_sin": 0.8660254,
+  "hora_cos": -0.5,
+  "prop_horas_cero_24": 0.1
+}

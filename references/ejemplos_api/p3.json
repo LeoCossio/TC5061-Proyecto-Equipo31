@@ -1,0 +1,8 @@
+{
+  "viajes_diarios": 100,
+  "balance_relativo": 0.2,
+  "proporcion_fin_semana": 0.3,
+  "manana": 0.4,
+  "mediodia": 0.35,
+  "tarde": 0.25
+}
