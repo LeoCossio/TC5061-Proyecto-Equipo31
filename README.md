@@ -1231,3 +1231,104 @@ La inferencia **por lotes** (calcular cada hora la predicción de las 470 estaci
 - **Dirección del anfitrión.** El `Containerfile` define por defecto `MLFLOW_TRACKING_URI=http://host.containers.internal:5000`, un nombre que Docker no resuelve: la primera petición a P2 o P3 queda esperando mientras MLflow reintenta. Con Docker hay que pasar `-e MLFLOW_TRACKING_URI=http://host.docker.internal:5000` (sección 21.3).
 - **Nombres en el Registry.** El código (`model_loader.py`) usa `mibici-equipo31-p1-demanda`, `mibici-equipo31-p2-riesgo` y `mibici-equipo31-p3-grupos`, versión 1; la tabla de la sección 15 y los ejemplos de la 15.3 muestran `mibici-p1`, `mibici-p2` y `mibici-p3`. Deben coincidir con los nombres realmente registrados en el servidor que use el contenedor.
 - **Qué se verificó desde el contenedor.** `/health`, `/predict/p1` (modelo empaquetado) y `/predict/p3` (modelo del Registry) devolvieron HTTP 200, y las entradas inválidas devolvieron 422. `/predict/p2` desde el Registry no se pudo verificar en la máquina de pruebas porque el modelo P2 disponible allí se había entrenado con scikit-learn 1.7.2 (punto anterior); su ruta de carga es la misma que la de P3.
+
+---
+
+## Monitoreo de Data Drift con Evidently — Entregable 8
+
+Se incorporó una capa de monitoreo para el modelo **P1 (predicción de demanda de bicicletas por estación-hora)** mediante Evidently 0.7.23. El objetivo es identificar cambios en las distribuciones de las variables predictoras y evaluar la calidad de los datos de un periodo posterior al entrenamiento.
+
+### 1. Preparación de datos
+
+Se reutiliza el pipeline de ingeniería de características de P1, conservando las 17 variables de la versión ampliada del modelo `HistGradientBoostingRegressor` registrado en MLflow como `mibici-equipo31-p1-demanda`.
+
+Se definieron los siguientes periodos:
+
+| Conjunto | Periodo | Observaciones | Estaciones |
+|---|---|---:|---:|
+| Referencia | Octubre 2025 – Mayo 2026 | 2,086,349 | 370 |
+| Actual | Agosto – Septiembre 2026 | 682,188 | 471 |
+
+El periodo de junio a julio de 2026 permanece reservado para validación. Los datos actuales corresponden a una simulación retrospectiva de producción.
+
+Los conjuntos se generan con:
+
+```powershell
+uv run python -m scripts.preparar_drift_p1
+```
+
+Los archivos resultantes se guardan en `data/monitoring/`:
+
+- `p1_referencia.parquet`
+- `p1_actual.parquet`
+
+Estos datasets incluyen las 17 variables predictoras, el identificador de estación, la fecha y hora y la variable objetivo. Los datos permanecen excluidos del control de versiones.
+
+### 2. Generación de reportes con Evidently
+
+Se utiliza Evidently para comparar las distribuciones de las 17 características mediante el **Population Stability Index (PSI)**, con un umbral de detección de 0.1.
+
+También se incluyen estadísticas de calidad de datos mediante `DataSummaryPreset`.
+
+Para ejecutar el monitoreo principal:
+
+```powershell
+uv run python -m scripts.monitorear_drift_p1
+```
+
+El proceso utiliza muestras reproducibles de 50,000 observaciones por conjunto (semilla 42).
+
+Los resultados se almacenan en `reports/monitoring/`:
+
+- `p1_drift_evidently.html`
+- `p1_drift_resultados.json`
+
+### 3. Análisis complementario: estaciones comunes
+
+Debido a las diferencias en la composición de estaciones entre los periodos, se realizó una segunda evaluación considerando exclusivamente estaciones presentes en ambos conjuntos.
+
+Ejecutar:
+
+```powershell
+uv run python -m scripts.monitorear_drift_p1_comunes
+```
+
+Los resultados se guardan en:
+
+- `p1_drift_estaciones_comunes.html`
+- `p1_drift_estaciones_comunes.json`
+
+Este análisis permite evaluar si los cambios en las distribuciones persisten al restringir la comparación a estaciones comunes.
+
+### 4. Resultados e interpretación
+
+| Indicador | Todas las estaciones | Estaciones comunes |
+|---|---:|---:|
+| Características evaluadas | 17 | 17 |
+| Variables con drift | 1 | 0 |
+| Porcentaje con drift | 5.88% | 0% |
+| PSI de `media_hist_estacion` | 0.1134 | 0.0495 |
+| Drift global detectado | No | No |
+
+En el análisis principal, la única variable con drift fue `media_hist_estacion`, correspondiente al promedio histórico de viajes de cada estación.
+
+Al considerar únicamente estaciones comunes, su PSI disminuyó aproximadamente un 56.4% y dejó de superar el umbral de detección.
+
+Esto sugiere que las diferencias en la composición de estaciones contribuyen parcialmente al cambio observado. Sin embargo, no demuestra una relación causal.
+
+**Conclusión:** no se detectó drift global en las características de P1. Se recomienda mantener el monitoreo periódico y utilizar las métricas de desempeño sobre el periodo actual para determinar si resulta conveniente reentrenar el modelo.
+
+### 5. Reproducibilidad
+
+El monitoreo reutiliza las funciones existentes de preparación de P1 y no modifica los modelos registrados, los pipelines de entrenamiento ni la API.
+
+Para reproducir el análisis se requiere:
+
+1. Instalar las dependencias del proyecto mediante `uv sync`.
+2. Disponer de los 12 archivos Parquet procesados en `data/processed/`.
+3. Ejecutar los scripts de preparación y monitoreo descritos anteriormente.
+4. Consultar los reportes HTML generados en `reports/monitoring/`.
+
+Los resultados de monitoreo constituyen la primera parte del Entregable 8 y servirán como evidencia para la comparación A/B entre versiones registradas en MLflow.
+
+---
