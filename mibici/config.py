@@ -86,3 +86,14 @@ P2_LR_C = 1.0
 # P3: búsqueda del número de grupos (criterio: silhouette, con k >= 3).
 P3_K_BUSQUEDA = [2, 3, 4, 5, 6, 7, 8]
 P3_K_MINIMO_SELECCION = 3
+
+
+# ---------------------------------------------------------
+# A/B testing del modelo P1 (entrega 8)
+# ---------------------------------------------------------
+AB_NOMBRE_MODELO = "mibici-equipo31-p1-demanda"
+# Mes que ninguno de los dos modelos ve al entrenar: sirve como evaluación común.
+AB_FECHA_INICIO_EVALUACION = "2026-09-01"
+AB_NIVEL_CONFIANZA = 0.95
+# El modelo alternativo no puede empeorar RMSE ni MAE en hora pico más de este porcentaje.
+AB_TOLERANCIA_EMPEORAMIENTO = 0.01
