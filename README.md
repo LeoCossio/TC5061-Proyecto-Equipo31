@@ -1399,7 +1399,7 @@ El alias `champion` apunta a la versión en producción y `challenger` a la sigu
 
 ### 5. Interpretación
 
-- **La mejora es pequeña pero consistente.** Reducir el MAE en 0.7 % y el RMSE en 1.4 % no cambia por sí solo una decisión operativa; lo que respalda el cambio es que se repite en 25 de 30 días y que entrenar B cuesta unos 40 segundos.
+- **La mejora es pequeña pero consistente.** Reducir el MAE en 0.7 % y el RMSE en 1.4 % no cambia por sí solo una decisión operativa; lo que respalda el cambio es que se repite en 25 de 30 días y que entrenar B cuesta menos de un minuto.
 - **Relación con el drift.** Evidently no detectó drift global en las 17 variables y solo `media_hist_estacion` superó el umbral (PSI 0.113). Aun así, el reentrenamiento con datos recientes mejoró el desempeño: la ausencia de drift en las entradas no garantiza que el modelo conserve su precisión, por eso conviene medir el desempeño además de las distribuciones.
 - **El modelo vigente pierde ventaja con el tiempo.** Frente al baseline de media histórica (que se actualiza con cada hora nueva), la ventaja del modelo A fue de 11.1 % en junio, 6.5 % en julio, 3.7 % en agosto y 5.7 % en septiembre (el modelo se entrenó con datos hasta mayo).
 
