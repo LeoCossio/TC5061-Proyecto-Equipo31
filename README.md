@@ -1231,3 +1231,194 @@ La inferencia **por lotes** (calcular cada hora la predicción de las 470 estaci
 - **Dirección del anfitrión.** El `Containerfile` define por defecto `MLFLOW_TRACKING_URI=http://host.containers.internal:5000`, un nombre que Docker no resuelve: la primera petición a P2 o P3 queda esperando mientras MLflow reintenta. Con Docker hay que pasar `-e MLFLOW_TRACKING_URI=http://host.docker.internal:5000` (sección 21.3).
 - **Nombres en el Registry.** El código (`model_loader.py`) usa `mibici-equipo31-p1-demanda`, `mibici-equipo31-p2-riesgo` y `mibici-equipo31-p3-grupos`, versión 1; la tabla de la sección 15 y los ejemplos de la 15.3 muestran `mibici-p1`, `mibici-p2` y `mibici-p3`. Deben coincidir con los nombres realmente registrados en el servidor que use el contenedor.
 - **Qué se verificó desde el contenedor.** `/health`, `/predict/p1` (modelo empaquetado) y `/predict/p3` (modelo del Registry) devolvieron HTTP 200, y las entradas inválidas devolvieron 422. `/predict/p2` desde el Registry no se pudo verificar en la máquina de pruebas porque el modelo P2 disponible allí se había entrenado con scikit-learn 1.7.2 (punto anterior); su ruta de carga es la misma que la de P3.
+
+---
+
+## Monitoreo de Data Drift con Evidently — Entregable 8
+
+Se incorporó una capa de monitoreo para el modelo **P1 (predicción de demanda de bicicletas por estación-hora)** mediante Evidently 0.7.23. El objetivo es identificar cambios en las distribuciones de las variables predictoras y evaluar la calidad de los datos de un periodo posterior al entrenamiento.
+
+### 1. Preparación de datos
+
+Se reutiliza el pipeline de ingeniería de características de P1, conservando las 17 variables de la versión ampliada del modelo `HistGradientBoostingRegressor` registrado en MLflow como `mibici-equipo31-p1-demanda`.
+
+Se definieron los siguientes periodos:
+
+| Conjunto | Periodo | Observaciones | Estaciones |
+|---|---|---:|---:|
+| Referencia | Octubre 2025 – Mayo 2026 | 2,086,349 | 370 |
+| Actual | Agosto – Septiembre 2026 | 682,188 | 471 |
+
+El periodo de junio a julio de 2026 permanece reservado para validación. Los datos actuales corresponden a una simulación retrospectiva de producción.
+
+Los conjuntos se generan con:
+
+```powershell
+uv run python -m scripts.preparar_drift_p1
+```
+
+Los archivos resultantes se guardan en `data/monitoring/`:
+
+- `p1_referencia.parquet`
+- `p1_actual.parquet`
+
+Estos datasets incluyen las 17 variables predictoras, el identificador de estación, la fecha y hora y la variable objetivo. Los datos permanecen excluidos del control de versiones.
+
+### 2. Generación de reportes con Evidently
+
+Se utiliza Evidently para comparar las distribuciones de las 17 características mediante el **Population Stability Index (PSI)**, con un umbral de detección de 0.1.
+
+También se incluyen estadísticas de calidad de datos mediante `DataSummaryPreset`.
+
+Para ejecutar el monitoreo principal:
+
+```powershell
+uv run python -m scripts.monitorear_drift_p1
+```
+
+El proceso utiliza muestras reproducibles de 50,000 observaciones por conjunto (semilla 42).
+
+Los resultados se almacenan en `reports/monitoring/`:
+
+- `p1_drift_evidently.html`
+- `p1_drift_resultados.json`
+
+### 3. Análisis complementario: estaciones comunes
+
+Debido a las diferencias en la composición de estaciones entre los periodos, se realizó una segunda evaluación considerando exclusivamente estaciones presentes en ambos conjuntos.
+
+Ejecutar:
+
+```powershell
+uv run python -m scripts.monitorear_drift_p1_comunes
+```
+
+Los resultados se guardan en:
+
+- `p1_drift_estaciones_comunes.html`
+- `p1_drift_estaciones_comunes.json`
+
+Este análisis permite evaluar si los cambios en las distribuciones persisten al restringir la comparación a estaciones comunes.
+
+### 4. Resultados e interpretación
+
+| Indicador | Todas las estaciones | Estaciones comunes |
+|---|---:|---:|
+| Características evaluadas | 17 | 17 |
+| Variables con drift | 1 | 0 |
+| Porcentaje con drift | 5.88% | 0% |
+| PSI de `media_hist_estacion` | 0.1134 | 0.0495 |
+| Drift global detectado | No | No |
+
+En el análisis principal, la única variable con drift fue `media_hist_estacion`, correspondiente al promedio histórico de viajes de cada estación.
+
+Al considerar únicamente estaciones comunes, su PSI disminuyó aproximadamente un 56.4% y dejó de superar el umbral de detección.
+
+Esto sugiere que las diferencias en la composición de estaciones contribuyen parcialmente al cambio observado. Sin embargo, no demuestra una relación causal.
+
+**Conclusión:** no se detectó drift global en las características de P1. Se recomienda mantener el monitoreo periódico y utilizar las métricas de desempeño sobre el periodo actual para determinar si resulta conveniente reentrenar el modelo.
+
+### 5. Reproducibilidad
+
+El monitoreo reutiliza las funciones existentes de preparación de P1 y no modifica los modelos registrados, los pipelines de entrenamiento ni la API.
+
+Para reproducir el análisis se requiere:
+
+1. Instalar las dependencias del proyecto mediante `uv sync`.
+2. Disponer de los 12 archivos Parquet procesados en `data/processed/`.
+3. Ejecutar los scripts de preparación y monitoreo descritos anteriormente.
+4. Consultar los reportes HTML generados en `reports/monitoring/`.
+
+Los resultados de monitoreo constituyen la primera parte del Entregable 8 y servirán como evidencia para la comparación A/B entre versiones registradas en MLflow.
+
+## A/B testing y versión alternativa de P1 — Entregable 8 (pasos 4 y 5)
+
+A partir del monitoreo de drift de la sección anterior se entrenó una versión alternativa del modelo P1, se registró en el Model Registry como una nueva versión del mismo modelo (`mibici-equipo31-p1-demanda`) y se comparó con la versión vigente sobre las mismas filas del periodo actual. El código está en [`mibici/ab_testing.py`](mibici/ab_testing.py) y [`scripts/ab_test_p1.py`](scripts/ab_test_p1.py), con pruebas en [`tests/test_ab_testing.py`](tests/test_ab_testing.py).
+
+### 1. Diseño de la comparación
+
+| Elemento | Definición |
+|---|---|
+| **Modelo A (vigente)** | Versión 1 del Registry: `HistGradientBoostingRegressor` (pérdida Poisson, tasa 0.05, 127 hojas, 200 iteraciones, 17 variables) entrenado con octubre de 2025 a mayo de 2026. Es la copia que empaqueta `modelos_serving/` |
+| **Modelo B (alternativo)** | Mismos hiperparámetros, semilla y variables, pero entrenado con todo lo anterior al mes de evaluación (octubre de 2025 a agosto de 2026; 3,032,684 filas). Lo único que cambia es la ventana de datos |
+| **Evaluación común** | Septiembre de 2026 (338,690 filas estación-hora). Ninguno de los dos modelos vio estos datos al entrenar |
+| **Métricas** | MAE (principal), RMSE y MAE en horas pico, en viajes por estación-hora, como en las entregas anteriores |
+
+La decisión se rige por una regla fijada antes de ver los resultados. B pasa a ser la versión vigente solo si cumple las tres condiciones:
+
+1. Reduce el MAE y el intervalo de confianza al 95 % de la diferencia diaria de MAE (A menos B) excluye el cero. Se compara día por día porque las filas de un mismo día no son independientes.
+2. No empeora el RMSE en más de 1 %.
+3. No empeora el MAE en horas pico en más de 1 %.
+
+Si falla alguna, se conserva A: cambiar de versión solo se justifica con una mejora comprobada.
+
+### 2. Ejecución
+
+Con el servidor de MLflow activo y los 12 Parquet en `data/processed/`:
+
+```bash
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000   # en otra terminal
+
+# Registra la versión B, compara con A y asigna el alias challenger; no toca champion
+MLFLOW_TRACKING_URI=http://127.0.0.1:5000 python scripts/ab_test_p1.py
+
+# Además mueve el alias champion a la versión que gane el A/B testing
+MLFLOW_TRACKING_URI=http://127.0.0.1:5000 python scripts/ab_test_p1.py --promover
+
+python -m pytest tests/test_ab_testing.py
+```
+
+Si el Registry ya contiene el modelo, A es la versión con el alias `champion` (o la versión 1). Si no lo contiene, el script registra como versión 1 la copia de `modelos_serving/`. El script tarda unos dos minutos y guarda los resultados en [`reports/ab_testing/resultado_p1.json`](reports/ab_testing/resultado_p1.json) y las gráficas en `reports/figures/ab_*.png`.
+
+### 3. Registro en MLflow
+
+Un experimento (`mibici-equipo31`) con la corrida `P1-AB-test-septiembre`, que contiene dos corridas anidadas (`P1-A-vigente` y `P1-B-reentrenado-hasta-agosto`), las gráficas, el resultado en JSON y el MAE diario. Cada versión del modelo registrado conserva su linaje:
+
+| Versión | Rol | Alias final | Etiquetas de linaje |
+|---|---|---|---|
+| 1 | A (vigente) | `challenger` | `origen: copia de modelos_serving/` |
+| 2 | B (reentrenado hasta agosto) | `champion` | `run_id_entrenamiento`, `ventana_entrenamiento`, `evaluacion`, `data_version`, `git_commit`, `version_comparada` |
+
+El alias `champion` apunta a la versión en producción y `challenger` a la siguiente mejor. Se usan alias y no las etapas clásicas porque son el esquema vigente de MLflow y permiten cargar el modelo por nombre y alias (`models:/mibici-equipo31-p1-demanda@champion`).
+
+### 4. Resultados (septiembre de 2026)
+
+| Métrica | A (vigente) | B (reentrenado) | Cambio de B |
+|---|---:|---:|---:|
+| MAE | 0.8330 | 0.8273 | −0.68 % |
+| RMSE | 1.5289 | 1.5071 | −1.43 % |
+| MAE en horas pico | 1.3559 | 1.3446 | −0.83 % |
+
+- **Diferencia diaria de MAE (A − B):** +0.0057, con intervalo de confianza al 95 % de +0.0035 a +0.0079; prueba de Wilcoxon, p = 6.9 × 10⁻⁶. B tiene menor error en 25 de los 30 días.
+- **Por tipo de estación:** en las estaciones con historia en el entrenamiento de A, el MAE pasa de 0.9305 a 0.9231; en las 72,290 filas de estaciones nuevas no hay diferencia (0.4735 contra 0.4740).
+- **Resultado de la regla:** cumple las tres condiciones, así que **B (versión 2) queda como versión vigente**.
+
+![Métricas de A y B](reports/figures/ab_metricas.png)
+
+![MAE diario de A y B](reports/figures/ab_mae_diario.png)
+
+### 5. Interpretación
+
+- **La mejora es pequeña pero consistente.** Reducir el MAE en 0.7 % y el RMSE en 1.4 % no cambia por sí solo una decisión operativa; lo que respalda el cambio es que se repite en 25 de 30 días y que entrenar B cuesta menos de un minuto.
+- **Relación con el drift.** Evidently no detectó drift global en las 17 variables y solo `media_hist_estacion` superó el umbral (PSI 0.113). Aun así, el reentrenamiento con datos recientes mejoró el desempeño: la ausencia de drift en las entradas no garantiza que el modelo conserve su precisión, por eso conviene medir el desempeño además de las distribuciones.
+- **El modelo vigente pierde ventaja con el tiempo.** Frente al baseline de media histórica (que se actualiza con cada hora nueva), la ventaja del modelo A fue de 11.1 % en junio, 6.5 % en julio, 3.7 % en agosto y 5.7 % en septiembre (el modelo se entrenó con datos hasta mayo).
+
+![MAE semanal del modelo vigente](reports/figures/ab_mae_semanal_modelo_vigente.png)
+
+- **El MAE de septiembre es mayor que el de agosto para ambos modelos** porque la demanda media subió de 1.14 a 1.44 viajes por estación-hora (+26 %); el error absoluto crece con el nivel de demanda.
+
+**Recomendación sobre Continuous Training:** reentrenar de forma periódica (por ejemplo, cada mes) en lugar de hacerlo solo cuando Evidently detecte drift. Cada reentrenamiento se compara con la versión vigente sobre el último mes completo con la misma regla de decisión y solo se promueve si la cumple. Esta propuesta no se ha validado con más de un mes de evaluación.
+
+### 6. Evidencia en MLflow
+
+![Modelo registrado con sus versiones y alias](reports/figures/ab_mlflow_registro_modelo.png)
+
+![Comparación de las corridas A y B](reports/figures/ab_mlflow_comparacion_ab.png)
+
+### 7. Limitaciones y observaciones
+
+- **Es una reproducción retrospectiva, no un A/B en vivo.** Ambos modelos se evalúan sobre los mismos datos históricos; no se enrutaron peticiones reales a cada versión.
+- **Un solo mes de evaluación y un solo reentrenamiento.** No se reajustaron los hiperparámetros de B ni se repitió con otras semillas o meses.
+- **Registry local.** Las versiones y alias de esta sección se crearon en un servidor MLflow local con la copia de `modelos_serving/` como versión 1. Para aplicarlo al Registry del equipo hay que ejecutar el script contra ese servidor; sin `--promover` no se modifica el alias `champion`.
+- **Requisitos del modelo.** Al registrar un modelo, MLflow toma por defecto el `requirements.txt` del repositorio, cuyo `scikit-learn==1.7.2` entra en conflicto con la 1.9.1 del modelo vigente. El script pasa los requisitos de forma explícita (`pip_requirements`). Con scikit-learn 1.7.2 el modelo vigente carga con un aviso y da las mismas predicciones, pero conviene unificar la versión en `requirements.txt`, `pyproject.toml`, `python_env.yaml` y el `Containerfile`.
+
