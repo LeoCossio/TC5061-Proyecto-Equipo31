@@ -1,0 +1,43 @@
+artifact_path: mlflow-artifacts:/1/models/m-6e66e182e1d0428dade51ed402e94b8c/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.7
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.9.1
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+mlflow_version: 3.17.2
+model_id: m-6e66e182e1d0428dade51ed402e94b8c
+model_size_bytes: 1446003
+model_uuid: m-6e66e182e1d0428dade51ed402e94b8c
+prompts: null
+run_id: 9f3de2ca4d2f4b0fbdafad2b93d85e43
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "hora", "required": true}, {"type": "double",
+    "name": "dia_semana", "required": true}, {"type": "double", "name": "fin_semana",
+    "required": true}, {"type": "double", "name": "capacidad", "required": true},
+    {"type": "double", "name": "salidas_lag_1", "required": true}, {"type": "double",
+    "name": "llegadas_lag_1", "required": true}, {"type": "double", "name": "flujo_neto_lag_1",
+    "required": true}, {"type": "double", "name": "presion_lag_1", "required": true},
+    {"type": "double", "name": "presion_lag_2", "required": true}, {"type": "double",
+    "name": "presion_lag_24", "required": true}, {"type": "double", "name": "presion_lag_168",
+    "required": true}, {"type": "double", "name": "presion_media_24", "required":
+    true}, {"type": "double", "name": "presion_media_168", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "int8", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-11-19 02:44:26.418684'

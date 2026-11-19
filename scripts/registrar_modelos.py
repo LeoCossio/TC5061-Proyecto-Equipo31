@@ -9,6 +9,7 @@ y que MLFLOW_TRACKING_URI apunte al servidor correspondiente.
 """
 
 import os
+import argparse
 
 import mlflow
 from mlflow import MlflowClient
@@ -153,18 +154,11 @@ def registrar_o_reutilizar(client, nombre, modelo_id, descripcion):
         description=descripcion,
     )
 
-    try:
-        champion_actual = client.get_model_version_by_alias(
-            nombre, "champion"
-        )
-    except mlflow.exceptions.MlflowException as exc:
-        if exc.error_code != "RESOURCE_DOES_NOT_EXIST":
-            raise
-        champion_actual = None
+    champion_actual = client.get_registered_model(nombre).aliases.get("champion")
 
-    if champion_actual is not None and champion_actual.version != numero:
+    if champion_actual is not None and str(champion_actual) != str(numero):
         raise RuntimeError(
-            f"{nombre} ya tiene champion v{champion_actual.version}. "
+            f"{nombre} ya tiene champion v{champion_actual}. "
             "No se modificara automaticamente."
         )
 
@@ -178,6 +172,14 @@ def registrar_o_reutilizar(client, nombre, modelo_id, descripcion):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Registra los modelos seleccionados.")
+    parser.add_argument(
+        "--questions",
+        nargs="+",
+        choices=list(GANADORES),
+        default=list(GANADORES),
+    )
+    args = parser.parse_args()
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
 
     if not tracking_uri:
@@ -193,7 +195,8 @@ def main():
     if experimento is None:
         raise RuntimeError(f"No existe el experimento {EXPERIMENTO}")
 
-    for pregunta, config in GANADORES.items():
+    for pregunta in args.questions:
+        config = GANADORES[pregunta]
         run = buscar_run(
             client,
             experimento.experiment_id,

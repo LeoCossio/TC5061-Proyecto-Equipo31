@@ -1,0 +1,53 @@
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.17.2
+    entrypoint: ["mlflow"]
+    command:
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////mlflow/mlflow.db
+      - --artifacts-destination=/mlflow/artifacts
+      - --serve-artifacts
+      - --allowed-hosts=mlflow:5000,localhost:5000,127.0.0.1:5000
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:5000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  registry-init:
+    image: ghcr.io/mlflow/mlflow:v3.17.2
+    entrypoint: ["python", "/init_registry.py"]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./modelos_registry:/modelos:ro
+      - ./scripts/inicializar_registry.py:/init_registry.py:ro
+    depends_on:
+      mlflow:
+        condition: service_healthy
+  
+  api:
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  mlflow_data:
