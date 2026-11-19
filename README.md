@@ -1446,3 +1446,10 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/p2" -ContentT
 
 Los JSON de los tres modelos están en `references/ejemplos_api/`.
 Para detener los servicios y conservar el Registry, ejecuta `docker compose down`.
+
+### Verificación automática en GitHub Actions
+
+El workflow **CI de MiBici** se ejecuta con cada push y pull request.
+Ejecuta Pytest, construye la imagen, arranca el sistema con un Registry
+vacío y comprueba una predicción de cada modelo. El resultado de cada
+ejecución se puede consultar en la pestaña **Actions** del repositorio.
