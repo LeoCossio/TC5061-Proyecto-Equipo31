@@ -10,6 +10,8 @@ documenten sus resultados con la misma estructura:
     model/    modelo con firma (signature) y ejemplo de entrada
 """
 
+from importlib.metadata import version
+
 import json
 import os
 import subprocess
@@ -124,14 +126,15 @@ def registrar_modelo(modelo, ejemplo, salida):
     """Registra el modelo con su firma y un ejemplo de entrada."""
     ejemplo = ejemplo.head(5).astype("float64")
     firma = infer_signature(ejemplo, salida[:5])
-    # cloudpickle: el formato skops (por defecto) rechaza los árboles de scikit-learn
-    # como tipo no confiable, así que no puede guardar Random Forest ni Boosting.
+    paquetes = ("scikit-learn", "numpy", "pandas", "scipy", "cloudpickle")
+
     mlflow.sklearn.log_model(
         modelo,
         name="model",
         signature=firma,
         input_example=ejemplo,
         serialization_format="cloudpickle",
+        pip_requirements=[f"{paquete}=={version(paquete)}" for paquete in paquetes],
     )
 
 

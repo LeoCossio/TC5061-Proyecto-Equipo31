@@ -1422,3 +1422,27 @@ El alias `champion` apunta a la versión en producción y `challenger` a la sigu
 - **Registry local.** Las versiones y alias de esta sección se crearon en un servidor MLflow local con la copia de `modelos_serving/` como versión 1. Para aplicarlo al Registry del equipo hay que ejecutar el script contra ese servidor; sin `--promover` no se modifica el alias `champion`.
 - **Requisitos del modelo.** Al registrar un modelo, MLflow toma por defecto el `requirements.txt` del repositorio, cuyo `scikit-learn==1.7.2` entra en conflicto con la 1.9.1 del modelo vigente. El script pasa los requisitos de forma explícita (`pip_requirements`). Con scikit-learn 1.7.2 el modelo vigente carga con un aviso y da las mismas predicciones, pero conviene unificar la versión en `requirements.txt`, `pyproject.toml`, `python_env.yaml` y el `Containerfile`.
 
+
+## Operación local con Docker Compose
+
+Desde la raíz del repositorio, con Docker en ejecución:
+
+```bash
+docker compose up --build --wait
+docker compose ps -a
+```
+
+La API queda disponible en http://127.0.0.1:8000/docs y MLflow en
+http://127.0.0.1:5000. P1 v1 viene incluido en la imagen de la API.
+En el primer arranque, `registry-init` registra P2 v1 y P3 v1 a partir
+de los artefactos del repositorio. Cuando termina, su estado esperado es
+`Exited (0)`. La API y MLflow deben quedar `healthy`.
+
+Para comprobar una inferencia de P2 desde PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/p2" -ContentType "application/json" -InFile ".\references\ejemplos_api\p2.json"
+```
+
+Los JSON de los tres modelos están en `references/ejemplos_api/`.
+Para detener los servicios y conservar el Registry, ejecuta `docker compose down`.
