@@ -98,7 +98,7 @@
       "100%": 1100
     },
     {
-      "Type": NaN,
+      "Type": null,
       "Name": "Aggregated",
       "Request Count": 38949,
       "Failure Count": 0,

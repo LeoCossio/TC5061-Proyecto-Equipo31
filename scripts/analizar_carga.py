@@ -211,7 +211,7 @@ def principal():
         "objetivo_p95_ms": args.slo_p95_ms,
         "capacidad_sostenible": None if mejor is None else {k: float(v) for k, v in mejor.items()},
         "maximo_rps_observado": float(escalones["rps"].max()),
-        "totales": totales.round(3).to_dict(orient="records"),
+        "totales": totales.round(3).astype(object).where(totales.notna(), None).to_dict(orient="records"),
         "recursos_en_reposo": {
             s: {"cpu_pct": float(en_reposo[en_reposo["servicio"] == s]["cpu_pct"].mean()),
                 "memoria_mib": float(en_reposo[en_reposo["servicio"] == s]["memoria_mib"].mean())}
@@ -219,7 +219,8 @@ def principal():
         "memoria_maxima_mib": {s: float(recursos[recursos["servicio"] == s]["memoria_mib"].max())
                                for s in ("api", "mlflow")},
     }
-    (salida / "resumen_carga.json").write_text(json.dumps(resumen, indent=2, ensure_ascii=False), encoding="utf-8")
+    (salida / "resumen_carga.json").write_text(json.dumps(resumen, indent=2, ensure_ascii=False, allow_nan=False),
+                                               encoding="utf-8")
     print(escalones.round(1).to_string(index=False))
     print("\nCapacidad sostenible:", resumen["capacidad_sostenible"])
 
