@@ -1456,7 +1456,7 @@ ejecución se puede consultar en la pestaña **Actions** del repositorio.
 
 ## Prueba de carga, monitoreo de recursos y FinOps
 
-Esta sección documenta cómo levantar el sistema, ejecutar el pipeline de CI y la prueba de carga, y el análisis de costo por inferencia. El reporte con las gráficas y el análisis completo está en [`reports/reporte_carga_finops.pdf`](reports/reporte_carga_finops.pdf).
+Esta sección documenta cómo levantar el sistema, ejecutar el pipeline de CI y la prueba de carga, y el análisis de costo por inferencia. El reporte con las gráficas y el análisis completo se entrega en PDF por Canvas; las gráficas y los datos que lo respaldan están en `reports/carga/` y `reports/finops/`.
 
 ### 1. Levantar el sistema
 
