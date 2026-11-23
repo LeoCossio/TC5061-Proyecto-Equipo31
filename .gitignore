@@ -215,3 +215,10 @@ mlflow.db-*
 
 # Reportes HTML de DeepChecks (se regeneran con python -m mibici.validacion_datos --html)
 reports/validacion/
+
+
+!/modelos_registry/p2/model.pkl
+!/modelos_registry/p3/model.pkl
+# Salidas crudas de la prueba de carga y entorno de Locust (los datos que se conservan están en reports/carga/datos)
+reportes_carga*/
+.venv-carga/

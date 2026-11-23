@@ -1422,3 +1422,153 @@ El alias `champion` apunta a la versión en producción y `challenger` a la sigu
 - **Registry local.** Las versiones y alias de esta sección se crearon en un servidor MLflow local con la copia de `modelos_serving/` como versión 1. Para aplicarlo al Registry del equipo hay que ejecutar el script contra ese servidor; sin `--promover` no se modifica el alias `champion`.
 - **Requisitos del modelo.** Al registrar un modelo, MLflow toma por defecto el `requirements.txt` del repositorio, cuyo `scikit-learn==1.7.2` entra en conflicto con la 1.9.1 del modelo vigente. El script pasa los requisitos de forma explícita (`pip_requirements`). Con scikit-learn 1.7.2 el modelo vigente carga con un aviso y da las mismas predicciones, pero conviene unificar la versión en `requirements.txt`, `pyproject.toml`, `python_env.yaml` y el `Containerfile`.
 
+
+## Operación local con Docker Compose
+
+Desde la raíz del repositorio, con Docker en ejecución:
+
+```bash
+docker compose up --build --wait
+docker compose ps -a
+```
+
+La API queda disponible en http://127.0.0.1:8000/docs y MLflow en
+http://127.0.0.1:5000. P1 v1 viene incluido en la imagen de la API.
+En el primer arranque, `registry-init` registra P2 v1 y P3 v1 a partir
+de los artefactos del repositorio. Cuando termina, su estado esperado es
+`Exited (0)`. La API y MLflow deben quedar `healthy`.
+
+Para comprobar una inferencia de P2 desde PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/p2" -ContentType "application/json" -InFile ".\references\ejemplos_api\p2.json"
+```
+
+Los JSON de los tres modelos están en `references/ejemplos_api/`.
+Para detener los servicios y conservar el Registry, ejecuta `docker compose down`.
+
+### Verificación automática en GitHub Actions
+
+El workflow **CI de MiBici** se ejecuta con cada push y pull request.
+Ejecuta Pytest, construye la imagen, arranca el sistema con un Registry
+vacío y comprueba una predicción de cada modelo. El resultado de cada
+ejecución se puede consultar en la pestaña **Actions** del repositorio.
+
+## Prueba de carga, monitoreo de recursos y FinOps
+
+Esta sección documenta cómo levantar el sistema, ejecutar el pipeline de CI y la prueba de carga, y el análisis de costo por inferencia. El reporte con las gráficas y el análisis completo se entrega en PDF por Canvas; las gráficas y los datos que lo respaldan están en `reports/carga/` y `reports/finops/`.
+
+### 1. Levantar el sistema
+
+```bash
+docker compose up --build --wait        # MLflow (5000), registro de P2 y P3 y la API (8000)
+docker compose ps -a                    # api y mlflow "healthy"; registry-init "Exited (0)"
+docker compose down                     # detiene los servicios y conserva el Registry
+```
+
+Hay además una variante optimizada, con los cambios que resultaron de la prueba de carga (sección 6):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.optimizado.yml up --build --wait
+API_WORKERS=4 docker compose -f docker-compose.yml -f docker-compose.optimizado.yml up --wait
+```
+
+### 2. Pipeline de CI/CD
+
+El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en cada *push* y *pull request*: instala las dependencias con `uv sync --locked`, ejecuta Pytest, construye la imagen, levanta el sistema con Compose y comprueba una predicción de P1, P2 y P3. Su resultado está en la pestaña **Actions** del repositorio; la última ejecución exitosa de la rama de Compose se muestra en [`reports/figures/ci_github_actions.png`](reports/figures/ci_github_actions.png).
+
+### 3. Ejecutar la prueba de carga
+
+El escenario de [`carga/locustfile.py`](carga/locustfile.py) simula usuarios que consultan los tres endpoints de predicción (P1 60 %, P2 20 %, P3 20 %), con una pausa de 0.2 a 0.6 s entre peticiones y valores de entrada variados. La carga crece por escalones de 60 s (5, 10, 20, 40, 60, 100 y 200 usuarios).
+
+```bash
+uv venv .venv-carga && uv pip install --python .venv-carga/bin/python -r carga/requirements-carga.txt
+docker compose up --build --wait
+scripts/ejecutar_prueba_carga.sh        # Locust + docker stats + gráficas (unos 8 minutos)
+python scripts/finops.py --entrada reports/carga --salida reports/finops --segundos-lote 120
+```
+
+El script lanza [`scripts/monitorear_recursos.py`](scripts/monitorear_recursos.py), que registra con `docker stats` la CPU y la memoria de cada contenedor cada 2 s, aplica la carga con Locust y genera las gráficas con [`scripts/analizar_carga.py`](scripts/analizar_carga.py). Los datos crudos de las tres configuraciones medidas están en `reports/carga/datos/`, y el reporte interactivo de Locust de la configuración base en [`reports/carga/locust_base.html`](reports/carga/locust_base.html).
+
+### 4. Resultados de la configuración base
+
+Prueba en un MacBook con Docker Desktop (8 CPU, 7.75 GiB). Locust se ejecutó en la misma máquina, así que las cifras son relativas a este equipo. Se enviaron 38,949 peticiones y **ninguna falló**.
+
+| Usuarios | Peticiones/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU de la API (% de un núcleo) |
+|---:|---:|---:|---:|---:|---:|
+| 5 | 11.5 | 32 | 54 | 61 | 50 |
+| 10 | 23.3 | 29 | 46 | 56 | 81 |
+| 20 | 46.2 | 33 | 56 | 89 | 149 |
+| 40 | 91.7 | 43 | 60 | 91 | 299 |
+| 60 | 131.7 | 53 | 100 | 170 | 391 |
+| 100 | 172.1 | 180 | 310 | 340 | 477 |
+| 200 | 176.1 | 770 | 900 | 930 | 469 |
+
+La capacidad sostenible, definida como el mayor rendimiento con menos de 1 % de errores y latencia p95 de 500 ms o menos, es de **172 peticiones por segundo** (100 usuarios). Con 200 usuarios el rendimiento ya no crece (176 peticiones/s) y la latencia se multiplica: el sistema está saturado, pero sigue respondiendo sin errores.
+
+![Latencia a lo largo de la prueba](reports/carga/carga_latencia.png)
+
+![Rendimiento y tasa de error](reports/carga/carga_rps_errores.png)
+
+![Rendimiento y latencia p95 según la carga](reports/carga/carga_capacidad.png)
+
+### 5. Consumo de recursos
+
+![CPU y memoria de los contenedores](reports/carga/carga_recursos.png)
+
+- **API:** la memoria es estable (196 a 222 MiB), pero la CPU llega a **~480 % de un núcleo** para solo 172 peticiones por segundo: 27.7 ms de CPU por inferencia.
+- **MLflow:** casi no usa CPU (~2 %), pero ocupa **2.1 GiB de memoria** aunque no reciba carga, diez veces más que la API.
+
+### 6. Optimización medida
+
+Dos causas explican esos números: scikit-learn usa hasta un hilo de OpenMP por núcleo visible (8) incluso para predecir una sola fila, y `mlflow server` levanta varios procesos. [`docker-compose.optimizado.yml`](docker-compose.optimizado.yml) fija `OMP_NUM_THREADS=1`, permite elegir el número de procesos de la API (`API_WORKERS`) y deja un solo proceso de MLflow. Se repitió la prueba con escalones de 45 s (20 a 400 usuarios):
+
+| Configuración | Capacidad sostenible | CPU de la API a esa carga | CPU por inferencia | Memoria de la API / MLflow |
+|---|---:|---:|---:|---:|
+| Base | 172 peticiones/s | 4.77 núcleos | 27.7 ms | 222 MiB / 2,201 MiB |
+| Optimizada, 1 proceso | 347 peticiones/s | 1.58 núcleos | 4.6 ms | 211 MiB / 1,648 MiB |
+| Optimizada, 4 procesos | ≥ 900 peticiones/s (no se saturó) | 3.57 núcleos | 4.0 ms | 788 MiB / 1,640 MiB |
+
+Con la misma API, la optimización duplicó el rendimiento y redujo seis veces la CPU por inferencia.
+
+### 7. Análisis FinOps
+
+El costo por inferencia se calcula con precios de referencia de AWS (us-east-1, Linux, consultados el 22 de noviembre de 2026; confirmar antes de presupuestar): instancia t3.medium (2 vCPU, 4 GiB) a USD 0.0416 por hora, t3.small (2 vCPU, 2 GiB) a USD 0.0208 por hora, y Fargate a USD 0.04048 por vCPU-hora y USD 0.004445 por GB-hora, con un mínimo de facturación de 60 s por tarea.
+
+**Costo marginal a plena carga** (CPU por inferencia × precio del vCPU-segundo de una t3.medium):
+
+| Configuración | Costo por inferencia | Por millón |
+|---|---:|---:|
+| Base | USD 1.60 × 10⁻⁷ | USD 0.160 |
+| Optimizada, 1 proceso | USD 2.64 × 10⁻⁸ | USD 0.026 |
+| Optimizada, 4 procesos | USD 2.29 × 10⁻⁸ | USD 0.023 |
+
+**Costo con la demanda real.** MiBici necesita una predicción de P1 y otra de P2 por estación y hora: 471 estaciones × 2 = **942 inferencias por hora** (687,660 al mes), unas 0.26 por segundo, es decir, menos del 0.2 % de la capacidad medida. El costo lo domina la capacidad que se paga sin usar:
+
+| Despliegue | Costo mensual | Por inferencia | Por millón |
+|---|---:|---:|---:|
+| 1. Sistema base 24/7 en una t3.medium | USD 30.37 | USD 4.42 × 10⁻⁵ | USD 44.16 |
+| 2. Sistema optimizado 24/7 en una t3.small (memoria muy justa: ~1.9 de 2 GiB) | USD 15.18 | USD 2.21 × 10⁻⁵ | USD 22.08 |
+| 3. Solo la API con modelos empaquetados, 24/7 en Fargate (0.25 vCPU, 0.5 GB) | USD 9.01 | USD 1.31 × 10⁻⁵ | USD 13.10 |
+| 4. Predicción por lotes cada hora en Fargate (120 s facturados por ejecución) | USD 0.30 | USD 4.37 × 10⁻⁷ | USD 0.44 |
+
+![Costo por inferencia](reports/finops/finops_costos.png)
+
+La predicción por lotes cuesta un 99 % menos que el sistema base. Un trabajo que arranca el contenedor, carga el modelo y predice las 942 filas tardó unos 2 s en la máquina de pruebas; en la nube se agregan la descarga de la imagen y el arranque, por eso se facturan 120 s por ejecución (con 60 s el costo mensual baja a USD 0.15).
+
+**Cómo optimizar el costo**
+1. **No ejecutar MLflow en producción.** Con los tres modelos empaquetados en la imagen (como ya está P1), el servicio no necesita el servidor de MLflow, que es el que más memoria ocupa.
+2. **Ajustar `OMP_NUM_THREADS` y los procesos de la API** (variante optimizada): menos CPU por inferencia y más rendimiento por núcleo.
+3. **Dimensionar para la demanda real.** La demanda es de 0.26 peticiones por segundo; basta una tarea de 0.25 vCPU.
+4. **Predicción por lotes o escala a cero** si no se requiere respuesta inmediata: las predicciones de cada hora se calculan una vez y se consultan.
+5. **Instancias Spot o planes de ahorro** para cargas que toleran interrupciones. Los agregadores de precios publican valores Spot de la t3.medium entre un 57 % y un 65 % por debajo del de lista, aunque varían y no están garantizados.
+6. **Reducir la imagen** (1.3 GB) para acelerar el arranque y la descarga en cada ejecución por lotes.
+
+### 8. Limitaciones
+
+- Locust y los contenedores comparten la máquina, y Docker Desktop corre en una máquina virtual: las latencias absolutas no se extrapolan a un servidor en la nube; sí sirven para comparar configuraciones.
+- La capacidad de la variante de 4 procesos es un límite inferior: no se saturó con 400 usuarios.
+- Los costos usan precios de lista de referencia, solo el cómputo; no incluyen almacenamiento, transferencia de datos, balanceador ni registro de contenedores.
+- La capacidad de una tarea de 0.25 vCPU se estima a partir de los milisegundos de CPU por inferencia medidos; no se probó en Fargate.
+- El escenario de carga es sintético: valores de entrada aleatorios dentro de rangos válidos y una mezcla de endpoints fija.
+

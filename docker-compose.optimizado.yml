@@ -1,0 +1,27 @@
+# Variante optimizada del sistema (ver la sección FinOps del README).
+#
+# Se aplica sobre docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.optimizado.yml up --build --wait
+#   API_WORKERS=4 docker compose -f docker-compose.yml -f docker-compose.optimizado.yml up --wait
+#
+# Cambios respecto del sistema base:
+#   - api: OMP_NUM_THREADS=1. Con una sola fila por petición, scikit-learn usaba hasta un hilo de
+#     OpenMP por núcleo visible (8) y la API consumía hasta ~5 núcleos para ~175 req/s.
+#   - api: número de procesos de uvicorn configurable con API_WORKERS (1 por defecto).
+#   - mlflow: un solo proceso de servidor. Por defecto levanta varios y ocupa más de 2 GiB.
+services:
+  api:
+    environment:
+      OMP_NUM_THREADS: "1"
+    command: ["uvicorn", "mibici.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-1}"]
+
+  mlflow:
+    command:
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////mlflow/mlflow.db
+      - --artifacts-destination=/mlflow/artifacts
+      - --serve-artifacts
+      - --allowed-hosts=mlflow:5000,localhost:5000,127.0.0.1:5000
+      - --workers=1

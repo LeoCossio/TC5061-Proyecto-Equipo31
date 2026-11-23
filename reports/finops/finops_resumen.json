@@ -1,0 +1,75 @@
+{
+  "precios_referencia": {
+    "ec2_t3_medium_hora": 0.0416,
+    "ec2_t3_small_hora": 0.0208,
+    "fargate_vcpu_hora": 0.04048,
+    "fargate_gb_hora": 0.004445,
+    "fargate_minimo_s": 60
+  },
+  "demanda_real": {
+    "inferencias_por_hora": 942,
+    "inferencias_por_mes": 687660
+  },
+  "a_plena_carga": {
+    "base": {
+      "usuarios": 100.0,
+      "rps": 172.1225,
+      "p95_ms": 310.0,
+      "nucleos_api": 4.7738,
+      "cpu_s_por_inferencia": 0.027734898110357446,
+      "costo_por_inferencia": 1.602460779709541e-07,
+      "memoria_api_mib": 221.4,
+      "memoria_mlflow_mib": 2193.408
+    },
+    "optimizada_1_proceso": {
+      "usuarios": 200.0,
+      "rps": 347.1275,
+      "p95_ms": 375.0,
+      "nucleos_api": 1.5844000000000003,
+      "cpu_s_por_inferencia": 0.004564317145717352,
+      "costo_por_inferencia": 2.637161017525581e-08,
+      "memoria_api_mib": 198.0,
+      "memoria_mlflow_mib": 1643.52
+    },
+    "optimizada_4_procesos": {
+      "usuarios": 400.0,
+      "rps": 900.3075000000001,
+      "p95_ms": 130.0,
+      "nucleos_api": 3.5653350000000006,
+      "cpu_s_por_inferencia": 0.003960130288817987,
+      "costo_por_inferencia": 2.2880752779837256e-08,
+      "memoria_api_mib": 788.2,
+      "memoria_mlflow_mib": 1637.376
+    }
+  },
+  "escenarios": [
+    {
+      "escenario": "1. Sistema base 24/7 en una instancia t3.medium (4 GiB)",
+      "costo_mensual": 30.368,
+      "nota": "API + MLflow base: 2.4 GiB de memoria",
+      "costo_por_inferencia": 4.416135881104034e-05,
+      "costo_por_millon": 44.16135881104034
+    },
+    {
+      "escenario": "2. Sistema optimizado 24/7 en una instancia t3.small (2 GiB)",
+      "costo_mensual": 15.184,
+      "nota": "API + MLflow optimizado: 1.8 GiB de memoria",
+      "costo_por_inferencia": 2.208067940552017e-05,
+      "costo_por_millon": 22.08067940552017
+    },
+    {
+      "escenario": "3. Solo la API con modelos empaquetados, 24/7 en Fargate (0.25 vCPU, 0.5 GB)",
+      "costo_mensual": 9.010025,
+      "nota": "Sin MLflow en producción",
+      "costo_por_inferencia": 1.3102441613588111e-05,
+      "costo_por_millon": 13.10244161358811
+    },
+    {
+      "escenario": "4. Predicción por lotes cada hora en Fargate (0.25 vCPU, 0.5 GB)",
+      "costo_mensual": 0.3003341666666667,
+      "nota": "730 ejecuciones al mes de 120 s facturados",
+      "costo_por_inferencia": 4.3674805378627037e-07,
+      "costo_por_millon": 0.43674805378627035
+    }
+  ]
+}
