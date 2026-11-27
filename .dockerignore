@@ -23,3 +23,5 @@ tests
 mlruns
 mlartifacts
 artifacts
+
+mlflow_final.db

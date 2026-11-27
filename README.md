@@ -1572,3 +1572,36 @@ La predicción por lotes cuesta un 99 % menos que el sistema base. Un trabajo qu
 - La capacidad de una tarea de 0.25 vCPU se estima a partir de los milisegundos de CPU por inferencia medidos; no se probó en Fargate.
 - El escenario de carga es sintético: valores de entrada aleatorios dentro de rangos válidos y una mezcla de endpoints fija.
 
+## Cierre del proyecto — Gobernanza y promoción del modelo
+
+### Model Card
+
+Se incorpora el documento [MODEL_CARD.md](MODEL_CARD.md), que describe los modelos, datos de entrenamiento, métricas, usos previstos, limitaciones, consideraciones éticas y estrategia de monitoreo.
+
+### Integración del modelo champion
+
+Se reprodujo exitosamente el A/B testing de P1, obteniendo las mismas métricas de evaluación y confirmando la promoción de la versión 2.
+
+Docker Compose inicializa las dos versiones de P1 y las versiones seleccionadas de P2 y P3. P1 se recupera mediante el alias `champion` del Model Registry, sustituyendo la carga local de la versión anterior.
+
+La versión 1 permanece disponible como `challenger`. Se conservan las etiquetas de trazabilidad de P1 v2.
+
+Para ejecutar el sistema completo:
+
+```powershell
+docker compose up --build --wait
+```
+
+### Validación final
+
+| Componente | Resultado |
+|---|---|
+| Docker Compose | Operativo |
+| MLflow Model Registry | Operativo |
+| P1 champion | Versión 2 |
+| P1 challenger | Versión 1 |
+| Health check | OK |
+| Endpoints P1, P2 y P3 | Operativos |
+| PyTest | 65 passed, 1 skipped |
+
+Las pruebas de carga y estimaciones FinOps anteriores corresponden a la configuración previa a esta actualización. El procedimiento recomendado para el despliegue final es Docker Compose, que garantiza la inicialización del Registry y la disponibilidad de los modelos.

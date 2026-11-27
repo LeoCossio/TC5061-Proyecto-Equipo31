@@ -222,3 +222,5 @@ reports/validacion/
 # Salidas crudas de la prueba de carga y entorno de Locust (los datos que se conservan están en reports/carga/datos)
 reportes_carga*/
 .venv-carga/
+
+/mlflow_final.db

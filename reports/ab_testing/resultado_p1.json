@@ -65,9 +65,9 @@
     }
   },
   "version_vigente_recomendada": "B",
-  "tiempo_entrenamiento_b_s": 28.623924416999216,
+  "tiempo_entrenamiento_b_s": 22.975311500000316,
   "data_version": "d78c6bcfdf6ecb0389084c4c8f116d319fb0f225665a1cb850e34b83dc524454",
-  "git_commit": "94cd40c58c85b879a32ffd47cec09bdbbc8bf843",
+  "git_commit": "93a866e7df3a1ff1d011d4da6320b76e9336f799",
   "resumen_mensual_modelo_vigente": {
     "2026-06": {
       "demanda_media": 1.2557,

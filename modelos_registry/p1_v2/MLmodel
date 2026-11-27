@@ -1,0 +1,46 @@
+artifact_path: mlflow-artifacts:/1/models/m-174c973972014f5eb91138978b645a39/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.7
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.9.1
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+mlflow_version: 3.17.2
+model_id: m-174c973972014f5eb91138978b645a39
+model_size_bytes: 2880424
+model_uuid: m-174c973972014f5eb91138978b645a39
+prompts: null
+run_id: cc62cc1d5555443eb6698910a0a7ef22
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "hora", "required": true}, {"type": "double",
+    "name": "dia_semana", "required": true}, {"type": "double", "name": "fin_semana",
+    "required": true}, {"type": "double", "name": "lag_1", "required": true}, {"type":
+    "double", "name": "lag_2", "required": true}, {"type": "double", "name": "lag_3",
+    "required": true}, {"type": "double", "name": "lag_24", "required": true}, {"type":
+    "double", "name": "lag_168", "required": true}, {"type": "double", "name": "media_movil_24",
+    "required": true}, {"type": "double", "name": "media_movil_168", "required": true},
+    {"type": "double", "name": "media_hist_estacion_dow_hora", "required": true},
+    {"type": "double", "name": "media_hist_estacion", "required": true}, {"type":
+    "double", "name": "media_hist_estacion_hora", "required": true}, {"type": "double",
+    "name": "tendencia_24_168", "required": true}, {"type": "double", "name": "hora_sin",
+    "required": true}, {"type": "double", "name": "hora_cos", "required": true}, {"type":
+    "double", "name": "prop_horas_cero_24", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-11-27 01:30:22.208002'
