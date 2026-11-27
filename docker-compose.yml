@@ -25,6 +25,7 @@ services:
     entrypoint: ["python", "/init_registry.py"]
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MIBICI_MODEL_P1_PATH: ""
     volumes:
       - ./modelos_registry:/modelos:ro
       - ./scripts/inicializar_registry.py:/init_registry.py:ro
@@ -38,6 +39,7 @@ services:
       dockerfile: Containerfile
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MIBICI_MODEL_P1_PATH: ""
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

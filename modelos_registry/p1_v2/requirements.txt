@@ -1,0 +1,5 @@
+mlflow==3.17.2
+scikit-learn==1.9.1
+numpy==2.3.3
+pandas==2.3.3
+cloudpickle==3.1.2

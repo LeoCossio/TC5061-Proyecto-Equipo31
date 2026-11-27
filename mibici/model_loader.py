@@ -9,7 +9,7 @@ import mlflow.sklearn
 
 
 MODELS = {
-    "p1": "models:/mibici-equipo31-p1-demanda/1",
+    "p1": "models:/mibici-equipo31-p1-demanda@champion",
     "p2": "models:/mibici-equipo31-p2-riesgo/1",
     "p3": "models:/mibici-equipo31-p3-grupos/1",
 }
